@@ -20,7 +20,8 @@
    docker compose up --build
    ```
 3. Откройте:
-   - Backend: http://localhost:8000/health/
+   - Backend health: http://localhost:8000/health/
+   - Backend auth API: http://localhost:8000/api/auth/token/
    - Frontend: http://localhost:3000
    - PostgreSQL: localhost:5432
    - Redis: localhost:6379

@@ -1,7 +1,7 @@
 Django>=5.1,<5.2
 djangorestframework>=3.15,<3.16
 psycopg2-binary>=2.9,<2.10
-djangorestframework-simplejwt>=5.0,<5.1
+djangorestframework-simplejwt>=5.5,<5.6
 django-cors-headers>=4.4,<4.5
 celery>=5.4,<5.5
 redis>=5.0,<5.1
