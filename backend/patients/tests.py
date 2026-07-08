@@ -12,7 +12,7 @@ class PatientSerializerTests(TestCase):
         patient = Patient.objects.create(
             user=user,
             full_name="Иванов Иван Иванович",
-            national_id="12345678901234",
+            pinfl="12345678901234",
             phone="+79990001122",
         )
         # Provide a request context with an authorized role that can see national_id
@@ -23,5 +23,5 @@ class PatientSerializerTests(TestCase):
 
         dummy_request = type("Req", (), {"user": DummyUser()})
         data = PatientSerializer(patient, context={"request": dummy_request}).data
-        self.assertEqual(data["national_id"], "12345678901234")
+        self.assertEqual(data["pinfl"], "12345678901234")
         self.assertEqual(data["phone"], "+79990001122")

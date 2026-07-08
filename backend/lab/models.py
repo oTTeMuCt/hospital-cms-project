@@ -8,7 +8,7 @@ class AnalysisType(models.Model):
     name = models.CharField("Наименование анализа", max_length=255)
     code = models.CharField("Код анализа", max_length=64, unique=True)
     price = models.DecimalField("Стоимость", max_digits=12, decimal_places=2, default=0)
-    currency = models.CharField("Валюта", max_length=8, default="RUB", help_text="ISO валюта, например RUB/KZT/UZS")
+    currency = models.CharField("Валюта", max_length=8, default="UZS", help_text="ISO валюта, например UZS/USD/RUB")
     turnaround_days = models.PositiveSmallIntegerField("Срок выполнения (дней)", default=1)
     normal_range = models.CharField("Референсные значения", max_length=255, blank=True)
     description = models.TextField("Описание", blank=True)

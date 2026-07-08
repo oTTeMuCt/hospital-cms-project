@@ -21,7 +21,7 @@ class SensitiveFieldsTests(TestCase):
         self.doctor = User.objects.create_user(username="doc", password="pass", role="doctor")
 
         self.patient_user = User.objects.create_user(username="patient1", password="testpass", role="patient")
-        self.patient = Patient.objects.create(user=self.patient_user, full_name="Иванов И.", national_id="NID123456")
+        self.patient = Patient.objects.create(user=self.patient_user, full_name="Иванов И.", pinfl="NID123456")
 
         self.hospital = Hospital.objects.create(name="Hosp", short_name="H1", timezone="Europe/Moscow", country_code="RU")
 
@@ -32,13 +32,13 @@ class SensitiveFieldsTests(TestCase):
     def test_registrar_sees_national_id(self):
         req = DummyRequest(self._wrap_user(self.registrar))
         data = PatientSerializer(self.patient, context={"request": req}).data
-        self.assertIn("national_id", data)
-        self.assertEqual(data["national_id"], "NID123456")
+        self.assertIn("pinfl", data)
+        self.assertEqual(data["pinfl"], "NID123456")
 
     def test_doctor_does_not_see_national_id(self):
         req = DummyRequest(self._wrap_user(self.doctor))
         data = PatientSerializer(self.patient, context={"request": req}).data
-        self.assertNotIn("national_id", data)
+        self.assertNotIn("pinfl", data)
 
     def test_admin_sees_hospital_timezone(self):
         req = DummyRequest(self._wrap_user(self.admin))

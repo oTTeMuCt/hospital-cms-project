@@ -31,11 +31,25 @@ class Patient(models.Model):
     birth_date = models.DateField("Дата рождения", null=True, blank=True)
     gender = models.CharField("Пол", max_length=16, choices=Gender.choices, blank=True)
     blood_group = models.CharField("Группа крови", max_length=8, choices=BloodGroup.choices, blank=True)
-    passport_series = models.CharField("Серия паспорта", max_length=4, blank=True, help_text="Серия паспорта РФ (4 цифры)")
-    passport_number = models.CharField("Номер паспорта", max_length=6, blank=True, help_text="Номер паспорта РФ (6 цифр)")
-    snils = models.CharField("СНИЛС", max_length=14, blank=True, help_text="Страховой номер индивидуального лицевого счёта")
-    oms_policy = models.CharField("Полис ОМС", max_length=16, blank=True, help_text="Номер полиса обязательного медицинского страхования")
-    national_id = models.CharField("Национальный идентификатор", max_length=64, blank=True, help_text="ПИНФЛ/ИНН/ИИН/другое")
+    pinfl = models.CharField(
+        "ПИНФЛ",
+        max_length=14,
+        blank=True,
+        unique=True,
+        help_text="Персональный идентификационный номер физического лица (14 цифр)",
+    )
+    passport = models.CharField(
+        "Паспорт",
+        max_length=32,
+        blank=True,
+        help_text="Серия и номер паспорта гражданина Узбекистана (AB 1234567)",
+    )
+    foreign_passport = models.CharField(
+        "Загранпаспорт / ID-карта иностранца",
+        max_length=64,
+        blank=True,
+        help_text="Для иностранных граждан",
+    )
     phone = models.CharField("Телефон", max_length=32, blank=True)
     email = models.EmailField("Email", blank=True)
     telegram_id = models.CharField("Telegram ID", max_length=64, blank=True)
@@ -51,9 +65,8 @@ class Patient(models.Model):
         indexes = [
             models.Index(fields=["full_name"]),
             models.Index(fields=["phone"]),
-            models.Index(fields=["snils"]),
-            models.Index(fields=["oms_policy"]),
-            models.Index(fields=["national_id"]),
+            models.Index(fields=["pinfl"]),
+            models.Index(fields=["passport"]),
         ]
 
     def __str__(self):

@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from accounts.serializers import SensitiveFieldsMixin
-from .models import BloodGroup, Gender, Patient
+from .models import Patient
 
 
 class PatientSerializer(SensitiveFieldsMixin, serializers.ModelSerializer):
@@ -13,7 +13,7 @@ class PatientSerializer(SensitiveFieldsMixin, serializers.ModelSerializer):
         fields = [
             "id", "user", "full_name", "birth_date", "gender", "gender_display",
             "blood_group", "blood_group_display",
-            "passport_series", "passport_number", "snils", "national_id", "oms_policy",
+            "pinfl", "passport", "foreign_passport",
             "phone", "email", "telegram_id", "address", "emergency_contact",
             "created_at", "updated_at",
         ]

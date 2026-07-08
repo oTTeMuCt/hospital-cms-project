@@ -55,7 +55,7 @@ class SensitiveFieldsMixin:
     """
     SENSITIVE_FIELDS = {
         "Patient": {
-            "national_id": {UserRole.ADMIN, UserRole.CHIEF_DOCTOR, UserRole.REGISTRAR},
+            "pinfl": {UserRole.ADMIN, UserRole.CHIEF_DOCTOR, UserRole.REGISTRAR},
         },
         "Hospital": {
             "timezone": {UserRole.ADMIN, UserRole.CHIEF_DOCTOR},

@@ -15,7 +15,6 @@ class AccountsModelTests(TestCase):
             first_name="Ivan",
             last_name="Petrov",
             role="doctor",
-            phone="+998900000000",
         )
 
         self.assertTrue(user.pk)

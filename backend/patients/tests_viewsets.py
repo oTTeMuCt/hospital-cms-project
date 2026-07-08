@@ -17,7 +17,7 @@ class PatientViewsetIntegrationTests(TestCase):
         self.doctor = User.objects.create_user(username="doc", password="pass", role="doctor")
 
         self.patient_user = User.objects.create_user(username="patient1", password="testpass", role="patient")
-        self.patient = Patient.objects.create(user=self.patient_user, full_name="Иванов И.", national_id="NID123456", phone="+79990001122")
+        self.patient = Patient.objects.create(user=self.patient_user, full_name="Иванов И.", pinfl="NID123456", phone="+79990001122")
 
         self.factory = APIRequestFactory()
 
@@ -33,7 +33,7 @@ class PatientViewsetIntegrationTests(TestCase):
         # normalize list
         items = results if isinstance(results, list) else results.get("results", [])
         self.assertGreaterEqual(len(items), 1)
-        self.assertIn("national_id", items[0])
+        self.assertIn("pinfl", items[0])
 
     def test_doctor_list_hides_national_id(self):
         request = self.factory.get("/api/patients/")
@@ -49,7 +49,7 @@ class PatientViewsetIntegrationTests(TestCase):
         view = PatientViewSet.as_view({"get": "retrieve"})
         response = view(request, pk=self.patient.id)
         self.assertEqual(response.status_code, 200)
-        self.assertIn("national_id", response.data)
+        self.assertIn("pinfl", response.data)
 
     def test_doctor_retrieve_hides_national_id(self):
         request = self.factory.get(f"/api/patients/{self.patient.id}/")
