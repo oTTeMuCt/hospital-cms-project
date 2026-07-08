@@ -53,6 +53,7 @@ class Patient(models.Model):
             models.Index(fields=["phone"]),
             models.Index(fields=["snils"]),
             models.Index(fields=["oms_policy"]),
+            models.Index(fields=["national_id"]),
         ]
 
     def __str__(self):
