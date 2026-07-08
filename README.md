@@ -20,7 +20,8 @@
    docker compose up --build
    ```
 3. Откройте:
-   - Backend: http://localhost:8000
+   - Backend: http://localhost:8000/health/
    - Frontend: http://localhost:3000
    - PostgreSQL: localhost:5432
    - Redis: localhost:6379
+   - Bot placeholder лог не доступен через HTTP, но контейнер должен оставаться запущенным.

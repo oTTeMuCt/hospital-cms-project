@@ -7,4 +7,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY bot ./
 
-CMD ["python", "-c", "print('bot ready')"]
+CMD ["python", "app.py"]

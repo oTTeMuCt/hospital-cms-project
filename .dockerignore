@@ -1,0 +1,15 @@
+.venv
+venv
+__pycache__
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info
+.git
+.gitignore
+.env
+*.log
+node_modules
+frontend/node_modules
+build
+dist
