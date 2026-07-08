@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
+from accounts.serializers import SensitiveFieldsMixin
 from .models import Department, DepartmentType, Hospital, Staff
 
 User = get_user_model()
@@ -25,7 +26,7 @@ class DepartmentListSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "department_type"]
 
 
-class HospitalSerializer(serializers.ModelSerializer):
+class HospitalSerializer(SensitiveFieldsMixin, serializers.ModelSerializer):
     departments = DepartmentListSerializer(many=True, read_only=True)
 
     class Meta:

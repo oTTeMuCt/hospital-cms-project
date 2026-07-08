@@ -15,6 +15,13 @@ class PatientSerializerTests(TestCase):
             national_id="12345678901234",
             phone="+79990001122",
         )
-        data = PatientSerializer(patient).data
+        # Provide a request context with an authorized role that can see national_id
+        class DummyUser:
+            def __init__(self):
+                self.role = "registrar"
+                self.is_authenticated = True
+
+        dummy_request = type("Req", (), {"user": DummyUser()})
+        data = PatientSerializer(patient, context={"request": dummy_request}).data
         self.assertEqual(data["national_id"], "12345678901234")
         self.assertEqual(data["phone"], "+79990001122")

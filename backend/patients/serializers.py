@@ -1,9 +1,10 @@
 from rest_framework import serializers
 
+from accounts.serializers import SensitiveFieldsMixin
 from .models import BloodGroup, Gender, Patient
 
 
-class PatientSerializer(serializers.ModelSerializer):
+class PatientSerializer(SensitiveFieldsMixin, serializers.ModelSerializer):
     gender_display = serializers.CharField(source="get_gender_display", read_only=True)
     blood_group_display = serializers.CharField(source="get_blood_group_display", read_only=True)
 
