@@ -6,42 +6,62 @@ from patients.models import Patient
 
 
 class AppointmentStatus(models.TextChoices):
-    PENDING = "pending", "Pending"
-    CONFIRMED = "confirmed", "Confirmed"
-    COMPLETED = "completed", "Completed"
-    CANCELLED = "cancelled", "Cancelled"
-    NO_SHOW = "no_show", "No-show"
+    PENDING = "pending", "Ожидает подтверждения"
+    CONFIRMED = "confirmed", "Подтверждена"
+    COMPLETED = "completed", "Завершена"
+    CANCELLED = "cancelled", "Отменена"
+    NO_SHOW = "no_show", "Неявка"
 
 
 class Appointment(models.Model):
-    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name="appointments")
+    patient = models.ForeignKey(
+        Patient,
+        verbose_name="Пациент",
+        on_delete=models.CASCADE,
+        related_name="appointments",
+    )
     doctor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
+        verbose_name="Врач",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="appointments",
     )
-    department = models.ForeignKey(Department, on_delete=models.SET_NULL, null=True, blank=True, related_name="appointments")
-    reason = models.CharField(max_length=512, blank=True)
-    scheduled_at = models.DateTimeField()
-    status = models.CharField(max_length=32, choices=AppointmentStatus.choices, default=AppointmentStatus.PENDING)
-    notes = models.TextField(blank=True)
+    department = models.ForeignKey(
+        Department,
+        verbose_name="Отделение",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="appointments",
+    )
+    reason = models.CharField("Причина обращения", max_length=512, blank=True)
+    scheduled_at = models.DateTimeField("Дата и время приёма")
+    end_time = models.DateTimeField("Окончание приёма", null=True, blank=True, help_text="Если известно заранее")
+    status = models.CharField(
+        "Статус",
+        max_length=32,
+        choices=AppointmentStatus.choices,
+        default=AppointmentStatus.PENDING,
+    )
+    notes = models.TextField("Заметки", blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
+        verbose_name="Кем создана",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="created_appointments",
     )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField("Дата создания", auto_now_add=True)
+    updated_at = models.DateTimeField("Дата обновления", auto_now=True)
 
     class Meta:
-        verbose_name = "Appointment"
-        verbose_name_plural = "Appointments"
+        verbose_name = "Запись на приём"
+        verbose_name_plural = "Записи на приём"
         ordering = ["-scheduled_at"]
         indexes = [models.Index(fields=["scheduled_at", "status"])]
 
     def __str__(self):
-        return f"Appointment for {self.patient.full_name} at {self.scheduled_at:%Y-%m-%d %H:%M}"
+        return f"Приём: {self.patient.full_name} — {self.scheduled_at:%d.%m.%Y %H:%M}"
