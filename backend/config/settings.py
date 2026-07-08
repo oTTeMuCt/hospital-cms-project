@@ -16,7 +16,19 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "corsheaders",
+    "accounts",
+    "hospitals",
+    "patients",
+    "medrecords",
+    "appointments",
+    "lab",
+    "files",
+    "notifications",
+    "audit",
+    "stats",
 ]
+
+AUTH_USER_MODEL = "accounts.User"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
