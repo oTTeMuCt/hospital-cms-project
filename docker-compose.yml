@@ -24,12 +24,13 @@ services:
     environment:
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me}
       DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
-      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
       POSTGRES_DB: ${POSTGRES_DB:-hospital_cms}
       POSTGRES_USER: ${POSTGRES_USER:-hospital}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hospital_pass}
       POSTGRES_HOST: ${POSTGRES_HOST:-db}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      BOT_API_KEY: ${BOT_API_KEY:-HCMS-Bot-2024-Secret}
       MEDIA_ROOT: /media
     ports:
       - "${BACKEND_PORT:-8000}:8000"
@@ -78,7 +79,10 @@ services:
     environment:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      BOT_API_KEY: ${BOT_API_KEY:-HCMS-Bot-2024-Secret}
+      API_BASE_URL: ${API_BASE_URL:-http://backend:8000/api}
     depends_on:
+      - backend
       - redis
 
 volumes:
