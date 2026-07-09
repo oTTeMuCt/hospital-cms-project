@@ -33,6 +33,16 @@ class AnalysisStatus(models.TextChoices):
     SENT = "sent", "Отправлен пациенту"
 
 
+ALLOWED_TRANSITIONS = {
+    AnalysisStatus.CREATED: {AnalysisStatus.ORDERED},
+    AnalysisStatus.ORDERED: {AnalysisStatus.IN_PROGRESS, AnalysisStatus.CREATED},
+    AnalysisStatus.IN_PROGRESS: {AnalysisStatus.COMPLETED, AnalysisStatus.ORDERED},
+    AnalysisStatus.COMPLETED: {AnalysisStatus.VERIFIED, AnalysisStatus.IN_PROGRESS},
+    AnalysisStatus.VERIFIED: {AnalysisStatus.SENT, AnalysisStatus.COMPLETED},
+    AnalysisStatus.SENT: set(),  # конечный статус
+}
+
+
 class AnalysisOrder(models.Model):
     patient = models.ForeignKey(
         Patient,

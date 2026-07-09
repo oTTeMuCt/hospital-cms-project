@@ -1,7 +1,7 @@
 from rest_framework import viewsets, filters
 from django_filters.rest_framework import DjangoFilterBackend
 
-from accounts.permissions import IsPatientOwnerOrStaff, IsRegistrar
+from accounts.permissions import IsAdminRole, IsPatientOwnerOrStaff, IsRegistrar
 from .models import Patient
 from .serializers import PatientSerializer
 
@@ -19,10 +19,14 @@ class PatientViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ("list", "retrieve"):
-            return [IsRegistrar()]
+            return [IsPatientOwnerOrStaff()]
         if self.action == "create":
             return [IsRegistrar()]
-        return [IsRegistrar()]
+        if self.action in ("update", "partial_update"):
+            return [IsPatientOwnerOrStaff()]
+        if self.action == "destroy":
+            return [IsAdminRole()]
+        return [IsPatientOwnerOrStaff()]
 
     def get_queryset(self):
         user = self.request.user

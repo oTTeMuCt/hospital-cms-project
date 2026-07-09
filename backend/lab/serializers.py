@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import AnalysisOrder, AnalysisType
+from .models import ALLOWED_TRANSITIONS, AnalysisOrder, AnalysisType
 
 
 class AnalysisTypeSerializer(serializers.ModelSerializer):
@@ -42,3 +42,19 @@ class AnalysisOrderSerializer(serializers.ModelSerializer):
             "notes",
         ]
         read_only_fields = ["id", "requested_at"]
+
+    def validate_status(self, value):
+        instance = getattr(self, "instance", None)
+        if instance is None:
+            # создание — допустим любой статус
+            return value
+        old_status = instance.status
+        if old_status == value:
+            return value
+        allowed = ALLOWED_TRANSITIONS.get(old_status, set())
+        if value not in allowed:
+            raise serializers.ValidationError(
+                f"Недопустимый переход: из «{instance.get_status_display()}» "
+                f"в «{dict(self.Meta.model.Status.choices).get(value, value)}»."
+            )
+        return value

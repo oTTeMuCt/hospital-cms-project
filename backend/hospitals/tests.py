@@ -18,7 +18,7 @@ class HospitalsModelTests(TestCase):
         department = Department.objects.create(
             hospital=hospital,
             name="Cardiology",
-            department_type="Medical",
+            department_type="cardiology",
             manager=chief,
         )
 

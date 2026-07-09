@@ -65,24 +65,28 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
+POSTGRES_HOST = os.getenv("POSTGRES_HOST")
+POSTGRES_DB_NAME = os.getenv("POSTGRES_DB", "hospital_cms")
+POSTGRES_USER = os.getenv("POSTGRES_USER", "hospital")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "hospital_pass")
+POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
+
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": POSTGRES_DB_NAME,
+        "USER": POSTGRES_USER,
+        "PASSWORD": POSTGRES_PASSWORD,
+        "HOST": POSTGRES_HOST or "localhost",
+        "PORT": POSTGRES_PORT,
     }
 }
 
-POSTGRES_HOST = os.getenv("POSTGRES_HOST")
-if POSTGRES_HOST:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.getenv("POSTGRES_DB", "hospital_cms"),
-            "USER": os.getenv("POSTGRES_USER", "hospital"),
-            "PASSWORD": os.getenv("POSTGRES_PASSWORD", "hospital_pass"),
-            "HOST": POSTGRES_HOST,
-            "PORT": os.getenv("POSTGRES_PORT", "5432"),
-        }
+# Fallback to SQLite for local development without PostgreSQL
+if os.getenv("USE_SQLITE", "").lower() in {"1", "true", "yes", "on"}:
+    DATABASES["default"] = {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
     }
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -117,6 +121,13 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
+    ],
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 50,
+    "DEFAULT_FILTER_BACKENDS": [
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.SearchFilter",
+        "rest_framework.filters.OrderingFilter",
     ],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
