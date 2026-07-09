@@ -9,8 +9,8 @@ import sys
 from pathlib import Path
 from threading import Lock
 
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import ReplyKeyboardMarkup, Update
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -24,175 +24,249 @@ logger = logging.getLogger("telegram_bot")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TELEGRAM_BOT_TOKEN:
-    logger.critical("TELEGRAM_BOT_TOKEN environment variable is not set. Exiting.")
+    logger.critical("TELEGRAM_BOT_TOKEN is not set. Exiting.")
     sys.exit(1)
 
-# Optional: backend API base URL for future integration
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000/api")
-
-# Where we persist chat_id -> patient_id mappings
 SUBSCRIPTIONS_FILE = Path(os.getenv("SUBSCRIPTIONS_FILE", "subscriptions.json"))
 
 # ---------------------------------------------------------------------------
-# Subscription store — in-memory dict backed by a JSON file
+# Subscription store
 # ---------------------------------------------------------------------------
 
-_subscriptions: dict[int, str] = {}       # chat_id -> patient_id
+_subscriptions: dict[int, str] = {}
 _lock = Lock()
 
 
 def _load_subscriptions() -> None:
-    """Load subscriptions from the JSON file into the in-memory dict (thread-safe)."""
     global _subscriptions
     if SUBSCRIPTIONS_FILE.exists():
         try:
             raw = SUBSCRIPTIONS_FILE.read_text(encoding="utf-8")
-            # JSON keys are always strings, so cast them back to ints
             _subscriptions = {int(k): v for k, v in json.loads(raw).items()}
-            logger.info("Loaded %d subscription(s) from %s", len(_subscriptions), SUBSCRIPTIONS_FILE)
+            logger.info("Loaded %d subscription(s)", len(_subscriptions))
         except (json.JSONDecodeError, ValueError, OSError) as exc:
-            logger.warning("Could not load subscriptions file (%s): %s", SUBSCRIPTIONS_FILE, exc)
+            logger.warning("Failed to load subscriptions: %s", exc)
             _subscriptions = {}
     else:
-        logger.info("No existing subscriptions file — starting fresh.")
+        logger.info("No existing subscriptions — starting fresh.")
 
 
 def _save_subscriptions() -> None:
-    """Persist the in-memory dict to JSON (thread-safe)."""
     with _lock:
         data = {str(k): v for k, v in _subscriptions.items()}
     try:
         SUBSCRIPTIONS_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
     except OSError as exc:
-        logger.error("Failed to save subscriptions to %s: %s", SUBSCRIPTIONS_FILE, exc)
+        logger.error("Failed to save subscriptions: %s", exc)
 
 
 # ---------------------------------------------------------------------------
-# Bot command handlers
+# Keyboard layouts
+# ---------------------------------------------------------------------------
+
+MAIN_KEYBOARD = ReplyKeyboardMarkup(
+    [
+        ["📋 Мой профиль", "🔔 Подписаться"],
+        ["❌ Отписаться", "📖 Помощь"],
+    ],
+    resize_keyboard=True,
+    persistent=True,
+)
+
+BACK_KEYBOARD = ReplyKeyboardMarkup(
+    [["🏠 В главное меню"]],
+    resize_keyboard=True,
+    persistent=True,
+)
+
+# ---------------------------------------------------------------------------
+# Handlers
 # ---------------------------------------------------------------------------
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send a welcome message."""
-    welcome = (
-        "🏥 <b>Hospital CMS Notification Bot</b> 🏥\n\n"
-        "I can notify you about updates for patients you're subscribed to.\n\n"
-        "<b>Available commands:</b>\n"
-        "  /subscribe <code><patient_id></code> — subscribe to a patient's notifications\n"
-        "  /unsubscribe — cancel your subscription\n"
-        "  /status — show your current subscription\n\n"
-        "Use /subscribe followed by a patient ID to get started!"
+    user_name = update.effective_user.first_name or "Гость"
+    text = (
+        f"🏥 <b>Hospital CMS</b> — Бот уведомлений\n\n"
+        f"Здравствуйте, <b>{user_name}</b>!\n\n"
+        f"Я помогу вам получать уведомления о пациентах:\n"
+        f"• результаты анализов\n"
+        f"• записи на приём\n"
+        f"• изменения в карточке\n\n"
+        f"<i>Используйте кнопки меню ниже ↓</i>"
     )
-    await update.message.reply_html(welcome)
+    await update.message.reply_html(text, reply_markup=MAIN_KEYBOARD)
 
 
-async def cmd_subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Register the current chat with a patient profile.
-
-    Usage: /subscribe <patient_id>
-    """
-    if not context.args or len(context.args) < 1:
-        await update.message.reply_text(
-            "⚠️  Please provide a patient ID.\n\n"
-            "Usage: /subscribe <code><patient_id></code>",
-            parse_mode="HTML",
-        )
-        return
-
-    patient_id = context.args[0].strip()
+async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
-
-    with _lock:
-        _subscriptions[chat_id] = patient_id
-
-    _save_subscriptions()
-
-    logger.info("Chat %d subscribed to patient %s", chat_id, patient_id)
-    await update.message.reply_text(
-        f"✅ You are now subscribed to notifications for <b>Patient {patient_id}</b>.",
-        parse_mode="HTML",
-    )
-
-
-async def cmd_unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Remove the current chat's subscription."""
-    chat_id = update.effective_chat.id
-
-    removed = False
-    with _lock:
-        if chat_id in _subscriptions:
-            patient_id = _subscriptions.pop(chat_id)
-            removed = True
-            logger.info("Chat %d unsubscribed from patient %s", chat_id, patient_id)
-
-    if removed:
-        _save_subscriptions()
-        await update.message.reply_text(
-            f"🗑️  You have been unsubscribed from <b>Patient {patient_id}</b>.",
-            parse_mode="HTML",
-        )
-    else:
-        await update.message.reply_text("ℹ️  You don't have an active subscription.")
-
-
-async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Show the current subscription for the chat."""
-    chat_id = update.effective_chat.id
+    user_name = update.effective_user.first_name or "Пользователь"
 
     with _lock:
         patient_id = _subscriptions.get(chat_id)
 
     if patient_id:
-        await update.message.reply_text(
-            f"📋  You are currently subscribed to <b>Patient {patient_id}</b>.",
-            parse_mode="HTML",
+        text = (
+            f"👤 <b>Ваш профиль</b>\n\n"
+            f"▫️ Telegram: {user_name}\n"
+            f"▫️ Chat ID: <code>{chat_id}</code>\n"
+            f"▫️ Привязан к пациенту: <b>#{patient_id}</b>\n\n"
+            f"✅ <i>Вы получаете уведомления</i>"
         )
     else:
+        text = (
+            f"👤 <b>Ваш профиль</b>\n\n"
+            f"▫️ Telegram: {user_name}\n"
+            f"▫️ Chat ID: <code>{chat_id}</code>\n\n"
+            f"⚠️ <i>Нет активных подписок</i>\n"
+            f"Нажмите «🔔 Подписаться» чтобы подключить уведомления."
+        )
+
+    await update.message.reply_html(text, reply_markup=MAIN_KEYBOARD)
+
+
+async def ask_patient_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = (
+        "🔔 <b>Подписка на уведомления</b>\n\n"
+        "Введите <b>ID пациента</b>, чтобы получать уведомления "
+        "о его анализах, приёмах и изменениях.\n\n"
+        "<i>ID можно узнать у вашего врача или в личном кабинете HCMS.</i>"
+    )
+    context.user_data["awaiting_patient_id"] = True
+    await update.message.reply_html(text, reply_markup=BACK_KEYBOARD)
+
+
+async def handle_patient_id_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not context.user_data.get("awaiting_patient_id"):
+        return
+
+    patient_id = update.message.text.strip()
+
+    if not patient_id.isdigit():
+        await update.message.reply_html(
+            "⚠️ ID пациента должен состоять из цифр.\n\nПопробуйте ещё раз:",
+            reply_markup=BACK_KEYBOARD,
+        )
+        return
+
+    chat_id = update.effective_chat.id
+    with _lock:
+        _subscriptions[chat_id] = patient_id
+    _save_subscriptions()
+    context.user_data.pop("awaiting_patient_id", None)
+
+    logger.info("Chat %d subscribed to patient %s", chat_id, patient_id)
+
+    await update.message.reply_html(
+        f"✅ <b>Подписка оформлена!</b>\n\n"
+        f"Теперь вы будете получать уведомления для <b>Пациента #{patient_id}</b>.\n\n"
+        f"📋 Проверьте статус в разделе «Мой профиль».",
+        reply_markup=MAIN_KEYBOARD,
+    )
+
+
+async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.effective_chat.id
+
+    with _lock:
+        patient_id = _subscriptions.pop(chat_id, None)
+
+    if patient_id:
+        _save_subscriptions()
+        logger.info("Chat %d unsubscribed from patient %s", chat_id, patient_id)
+        await update.message.reply_html(
+            f"🗑️ <b>Подписка отменена</b>\n\n"
+            f"Вы больше не получаете уведомления для <b>Пациента #{patient_id}</b>.",
+            reply_markup=MAIN_KEYBOARD,
+        )
+    else:
+        await update.message.reply_html(
+            "ℹ️ У вас нет активных подписок.\n\n"
+            "Нажмите «🔔 Подписаться» чтобы начать.",
+            reply_markup=MAIN_KEYBOARD,
+        )
+
+
+async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = (
+        "📖 <b>Помощь</b>\n\n"
+        "<b>📋 Мой профиль</b> — текущий статус подписки\n"
+        "<b>🔔 Подписаться</b> — привязать ID пациента\n"
+        "<b>❌ Отписаться</b> — отменить подписку\n"
+        "<b>📖 Помощь</b> — это сообщение\n\n"
+        "<i>По любым вопросам обращайтесь в регистратуру вашей клиники.</i>"
+    )
+    await update.message.reply_html(text, reply_markup=MAIN_KEYBOARD)
+
+
+async def go_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    context.user_data.pop("awaiting_patient_id", None)
+    await update.message.reply_html(
+        "🏠 <b>Главное меню</b>\n\nВыберите действие:",
+        reply_markup=MAIN_KEYBOARD,
+    )
+
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Route text messages that aren't commands."""
+    if context.user_data.get("awaiting_patient_id"):
+        await handle_patient_id_input(update, context)
+        return
+
+    text = update.message.text.strip()
+
+    if text == "📋 Мой профиль":
+        await show_profile(update, context)
+    elif text == "🔔 Подписаться":
+        await ask_patient_id(update, context)
+    elif text == "❌ Отписаться":
+        await unsubscribe(update, context)
+    elif text == "📖 Помощь":
+        await show_help(update, context)
+    elif text == "🏠 В главное меню":
+        await go_main_menu(update, context)
+    else:
         await update.message.reply_text(
-            "📭  You are not subscribed to any patient.\n\n"
-            "Use /subscribe <code><patient_id></code> to start receiving notifications.",
-            parse_mode="HTML",
+            "Пожалуйста, используйте кнопки меню ↓",
+            reply_markup=MAIN_KEYBOARD,
         )
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Log errors gracefully."""
-    logger.error("Exception while handling update %s: %s", update, context.error, exc_info=True)
-    # If we have a chat to reply to, let the user know something went wrong
+    logger.error("Exception handling update: %s", context.error, exc_info=True)
     if isinstance(update, Update) and update.effective_chat:
         try:
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text="😞  Sorry, something went wrong. Please try again later.",
+                text="😞 Произошла ошибка. Попробуйте ещё раз.",
+                reply_markup=MAIN_KEYBOARD,
             )
         except Exception:
-            pass  # best-effort
+            pass
 
 
 # ---------------------------------------------------------------------------
-# Application bootstrap
+# Bootstrap
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    """Build and run the bot."""
-    # Load any existing subscriptions before the bot starts
     _load_subscriptions()
 
-    app = (
-        Application.builder()
-        .token(TELEGRAM_BOT_TOKEN)
-        .build()
-    )
+    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # Register command handlers
+    # Commands
     app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("subscribe", cmd_subscribe))
-    app.add_handler(CommandHandler("unsubscribe", cmd_unsubscribe))
-    app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(CommandHandler("profile", show_profile))
+    app.add_handler(CommandHandler("subscribe", ask_patient_id))
+    app.add_handler(CommandHandler("unsubscribe", unsubscribe))
+    app.add_handler(CommandHandler("help", show_help))
 
-    # Global error handler
+    # Text messages (keyboard buttons + patient ID input)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+
     app.add_error_handler(error_handler)
 
-    logger.info("Telegram bot starting (polling mode)…")
+    logger.info("Telegram bot starting (polling mode)...")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
