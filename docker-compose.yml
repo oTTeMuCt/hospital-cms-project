@@ -24,26 +24,51 @@ services:
     environment:
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me}
       DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
+      POSTGRES_DB: ${POSTGRES_DB:-hospital_cms}
+      POSTGRES_USER: ${POSTGRES_USER:-hospital}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hospital_pass}
+      POSTGRES_HOST: ${POSTGRES_HOST:-db}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      BOT_API_KEY: ${BOT_API_KEY:-HCMS-Bot-2024-Secret}
+      MEDIA_ROOT: /media
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - media_data:/media
+    depends_on:
+      - db
+      - redis
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - backend
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    working_dir: /app/backend
+    command: celery -A config worker -l info
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-False}
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
       POSTGRES_DB: ${POSTGRES_DB:-hospital_cms}
       POSTGRES_USER: ${POSTGRES_USER:-hospital}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hospital_pass}
       POSTGRES_HOST: ${POSTGRES_HOST:-db}
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
-    ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
     depends_on:
       - db
       - redis
-
-  frontend:
-    image: nginx:alpine
-    ports:
-      - "${FRONTEND_PORT:-3000}:80"
-    volumes:
-      - ./frontend:/usr/share/nginx/html:ro
-    depends_on:
-      - backend
 
   bot:
     build:
@@ -54,8 +79,12 @@ services:
     environment:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      BOT_API_KEY: ${BOT_API_KEY:-HCMS-Bot-2024-Secret}
+      API_BASE_URL: ${API_BASE_URL:-http://backend:8000/api}
     depends_on:
+      - backend
       - redis
 
 volumes:
   postgres_data:
+  media_data:
