@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export default function Login() {
@@ -42,38 +42,17 @@ export default function Login() {
       }}
     >
       <div style={{ width: "100%", maxWidth: "420px" }}>
-        <h1
-          style={{
-            fontSize: "36px",
-            fontWeight: 900,
-            textAlign: "center",
-            marginBottom: "8px",
-            letterSpacing: "-1px",
-          }}
-        >
-          HCMS
-        </h1>
-        <p
-          style={{
-            textAlign: "center",
-            marginBottom: "32px",
-            fontSize: "14px",
-            fontWeight: 600,
-            color: "#666",
-          }}
-        >
-          Hospital Central Management System
-        </p>
+        <div style={{ textAlign: "center", marginBottom: "40px" }}>
+          <h1 style={{ fontSize: "48px", fontWeight: 900, letterSpacing: "-2px", lineHeight: 1 }}>
+            HCMS
+          </h1>
+          <p style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginTop: "4px", textTransform: "uppercase", letterSpacing: "1px" }}>
+            Hospital Central Management System
+          </p>
+        </div>
 
-        <div className="card">
-          <h2
-            style={{
-              fontSize: "20px",
-              fontWeight: 700,
-              marginBottom: "24px",
-              textTransform: "uppercase",
-            }}
-          >
+        <div className="card" style={{ padding: "32px" }}>
+          <h2 style={{ fontSize: "16px", fontWeight: 800, marginBottom: "24px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
             Вход в систему
           </h2>
 
@@ -107,14 +86,27 @@ export default function Login() {
 
             <button
               type="submit"
-              className="btn btn-primary"
+              className="btn btn-primary btn-lg"
               disabled={submitting}
-              style={{ width: "100%", padding: "14px", fontSize: "16px" }}
+              style={{ width: "100%", marginTop: "8px" }}
             >
               {submitting ? "Вход..." : "Войти"}
             </button>
           </form>
+
+          <div style={{ textAlign: "center", marginTop: "20px" }}>
+            <span style={{ fontSize: "14px", color: "var(--text-secondary)" }}>
+              Нет аккаунта?{" "}
+            </span>
+            <Link to="/register" style={{ fontWeight: 700, textDecoration: "underline" }}>
+              Зарегистрироваться
+            </Link>
+          </div>
         </div>
+
+        <p style={{ textAlign: "center", marginTop: "24px", fontSize: "12px", color: "var(--text-muted)", fontWeight: 600 }}>
+          Система управления медицинскими учреждениями
+        </p>
       </div>
     </div>
   );

@@ -11,15 +11,25 @@ User = get_user_model()
 
 class AppointmentSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
+    patient_name = serializers.SerializerMethodField()
+    doctor_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Appointment
         fields = [
-            "id", "patient", "doctor", "department", "reason",
+            "id", "patient", "patient_name", "doctor", "doctor_name", "department", "reason",
             "scheduled_at", "end_time", "status", "status_display",
             "notes", "created_by", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_patient_name(self, obj):
+        return obj.patient.full_name if obj.patient else None
+
+    def get_doctor_name(self, obj):
+        if obj.doctor:
+            return obj.doctor.full_name_display if hasattr(obj.doctor, "full_name_display") else obj.doctor.get_full_name()
+        return None
 
     def validate(self, data):
         doctor = data.get("doctor", getattr(self.instance, "doctor", None))

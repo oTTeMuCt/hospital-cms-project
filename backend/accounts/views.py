@@ -1,6 +1,5 @@
 from django.contrib.auth import get_user_model
-from rest_framework import generics, permissions, status
-from rest_framework.response import Response
+from rest_framework import generics, permissions
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .permissions import IsAdminRole
@@ -35,7 +34,13 @@ class MeView(generics.RetrieveAPIView):
 class UserListView(generics.ListAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
-    permission_classes = [IsAdminRole]
+
+    def get_permissions(self):
+        # Администратор может видеть всех пользователей
+        # Регистратор/врач могут искать пользователей для привязки
+        if self.request.user.is_authenticated and self.request.user.role in {"admin", "registrar", "doctor", "chief_doctor"}:
+            return [permissions.IsAuthenticated()]
+        return [IsAdminRole()]
 
 
 class UserDetailView(generics.RetrieveAPIView):

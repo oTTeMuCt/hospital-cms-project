@@ -1,11 +1,18 @@
 import os
 
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, filters
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django_filters.rest_framework import DjangoFilterBackend
 
-from accounts.permissions import IsAdminRole, IsDoctor, IsLabTech
+from accounts.permissions import (
+    IsAdminRole,
+    IsAuthenticatedAndRole,
+    IsDoctor,
+    IsLabTech,
+)
+from rest_framework import permissions as drf_permissions
 from patients.models import Patient
 from .models import AnalysisOrder, AnalysisType
 from .serializers import AnalysisOrderSerializer, AnalysisTypeSerializer
@@ -27,10 +34,17 @@ class AnalysisOrderViewSet(viewsets.ModelViewSet):
         "patient", "orderer", "assigned_to", "analysis_type", "verified_by"
     ).all()
     serializer_class = AnalysisOrderSerializer
+    allowed_roles = {"admin", "doctor", "chief_doctor", "lab_tech", "registrar", "patient"}
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["patient", "status", "analysis_type"]
+    search_fields = ["patient__full_name", "analysis_type__name", "result"]
+    ordering_fields = ["requested_at", "status"]
+    ordering = ["-requested_at"]
 
     def get_permissions(self):
         if self.action in ("list", "retrieve"):
-            return [IsLabTech()]
+            # Лаборант, врач, главврач, администратор — могут видеть
+            return [IsAuthenticatedAndRole()]
         if self.action == "create":
             return [IsDoctor()]
         if self.action in ("update", "partial_update"):
@@ -38,6 +52,14 @@ class AnalysisOrderViewSet(viewsets.ModelViewSet):
         if self.action == "destroy":
             return [IsAdminRole()]
         return [IsLabTech()]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        user = self.request.user
+        # Пациенты видят только свои анализы
+        if user.is_authenticated and user.role == "patient":
+            return qs.filter(patient__user=user)
+        return qs
 
 
 class BotPatientAnalysesView(APIView):

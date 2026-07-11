@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import ALLOWED_TRANSITIONS, AnalysisOrder, AnalysisType
+from .models import ALLOWED_TRANSITIONS, AnalysisOrder, AnalysisStatus, AnalysisType
 
 
 class AnalysisTypeSerializer(serializers.ModelSerializer):
@@ -55,6 +55,6 @@ class AnalysisOrderSerializer(serializers.ModelSerializer):
         if value not in allowed:
             raise serializers.ValidationError(
                 f"Недопустимый переход: из «{instance.get_status_display()}» "
-                f"в «{dict(self.Meta.model.Status.choices).get(value, value)}»."
+                f"в «{dict(AnalysisStatus.choices).get(value, value)}»."
             )
         return value
