@@ -1,3 +1,4 @@
+from django.db import transaction
 from rest_framework import viewsets, filters
 from django_filters.rest_framework import DjangoFilterBackend
 
@@ -38,7 +39,7 @@ class PatientViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        qs = Patient.objects.all()
+        qs = Patient.objects.select_for_update() if self.action in ("create", "update", "partial_update", "destroy") else Patient.objects.all()
         if user.role == "patient":
             return qs.filter(user=user)
         if user.role in ("doctor", "chief_doctor", "lab_tech", "registrar", "admin"):

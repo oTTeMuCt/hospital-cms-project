@@ -8,13 +8,15 @@ User = get_user_model()
 
 
 class NotificationSerializer(serializers.ModelSerializer):
+    recipient_name = serializers.SerializerMethodField()
+
     class Meta:
         model = Notification
         fields = [
             "id",
             "recipient_content_type",
             "recipient_object_id",
-            "recipient",
+            "recipient_name",
             "channel",
             "subject",
             "text",
@@ -25,3 +27,8 @@ class NotificationSerializer(serializers.ModelSerializer):
             "created_by",
         ]
         read_only_fields = ["id", "created_at", "sent_at", "status"]
+
+    def get_recipient_name(self, obj):
+        if obj.recipient:
+            return str(obj.recipient)
+        return None

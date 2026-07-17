@@ -53,6 +53,9 @@ class AnalysisOrderViewSet(viewsets.ModelViewSet):
             return [IsAdminRole()]
         return [IsLabTech()]
 
+    def perform_create(self, serializer):
+        serializer.save(orderer=self.request.user)
+
     def get_queryset(self):
         qs = super().get_queryset()
         user = self.request.user

@@ -25,11 +25,11 @@ export default function AuditLog() {
   return (
     <div>
       <div className="page-header">
-        <h1>📋 Журнал действий</h1>
+        <h1>Журнал действий</h1>
         <p>Аудит всех действий пользователей в системе</p>
       </div>
       <div className="page-content">
-        {error && <div className="error-message">{error}</div>}
+        {error && <div className="alert alert-error">{error}</div>}
         {logs.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">📋</div>
@@ -57,7 +57,7 @@ export default function AuditLog() {
                     <td className="text-sm text-muted">{log.ip_address || "—"}</td>
                     <td>
                       <span className={`badge ${log.succeeded ? "badge-success" : "badge-danger"}`}>
-                        {log.succeeded ? "✅ Успешно" : "❌ Ошибка"}
+                        {log.succeeded ? "Успешно" : "Ошибка"}
                       </span>
                     </td>
                   </tr>

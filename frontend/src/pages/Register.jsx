@@ -58,15 +58,14 @@ export default function Register() {
         middle_name: form.middle_name.trim(),
         role: form.role,
       };
-      const res = await api.post("/auth/register/", payload);
+      await api.post("/auth/register/", payload);
       const isPatient = form.role === "patient";
       if (isPatient) {
         setSuccess(`Пользователь "${form.username}" успешно создан! Теперь заполните данные пациента.`);
-        // Сохраняем username в sessionStorage, чтобы PatientForm знал, для кого создавать
         sessionStorage.setItem("newPatientUser", form.username);
         setTimeout(() => navigate("/patients/new"), 1500);
       } else {
-        setSuccess(`Пользователь "${form.username}" успешно создан! Сейчас вы будете перенаправлены на страницу входа.`);
+        setSuccess(`Пользователь "${form.username}" успешно создан! Перенаправление на страницу входа...`);
         setTimeout(() => navigate("/login"), 2000);
       }
     } catch (err) {
@@ -85,33 +84,16 @@ export default function Register() {
   };
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "var(--bg)",
-        padding: "20px",
-      }}
-    >
-      <div style={{ width: "100%", maxWidth: "480px" }}>
-        <div style={{ textAlign: "center", marginBottom: "32px" }}>
-          <h1 style={{ fontSize: "40px", fontWeight: 900, letterSpacing: "-2px", lineHeight: 1 }}>
-            HCMS
-          </h1>
-          <p style={{ fontSize: "13px", fontWeight: 700, color: "var(--text-secondary)", marginTop: "4px", textTransform: "uppercase", letterSpacing: "1px" }}>
-            Регистрация нового пользователя
-          </p>
-        </div>
+    <div className="auth-page">
+      <div style={{ width: "100%", maxWidth: "520px" }}>
+        <div className="auth-card">
+          <div className="auth-header">
+            <h1>HCMS</h1>
+            <p>Регистрация нового пользователя</p>
+          </div>
 
-        <div className="card" style={{ padding: "32px" }}>
-          <h2 style={{ fontSize: "16px", fontWeight: 800, marginBottom: "24px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-            Создать учётную запись
-          </h2>
-
-          {error && <div className="error-message">{error}</div>}
-          {success && <div className="success-message">{success}</div>}
+          {error && <div className="alert alert-error">{error}</div>}
+          {success && <div className="alert alert-success">{success}</div>}
 
           <form onSubmit={handleSubmit}>
             <div className="form-row">
@@ -158,23 +140,17 @@ export default function Register() {
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
-              <p style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "4px" }}>
-                Роль "Администратор" и "Главный врач" назначаются только администратором системы
-              </p>
+              <p className="form-hint">Роль "Администратор" и "Главный врач" назначаются только администратором системы</p>
             </div>
 
-            <button type="submit" className="btn btn-primary btn-lg" disabled={submitting} style={{ width: "100%", marginTop: "8px" }}>
-              {submitting ? "Регистрация..." : "📝 Зарегистрироваться"}
+            <button type="submit" className="btn btn-primary btn-lg w-full" disabled={submitting} style={{ marginTop: "8px" }}>
+              {submitting ? "Регистрация..." : "Зарегистрироваться"}
             </button>
           </form>
 
-          <div style={{ textAlign: "center", marginTop: "20px" }}>
-            <span style={{ fontSize: "14px", color: "var(--text-secondary)" }}>
-              Уже есть аккаунт?{" "}
-            </span>
-            <Link to="/login" style={{ fontWeight: 700, textDecoration: "underline" }}>
-              Войти
-            </Link>
+          <div className="auth-footer">
+            Уже есть аккаунт?{" "}
+            <Link to="/login">Войти</Link>
           </div>
         </div>
       </div>

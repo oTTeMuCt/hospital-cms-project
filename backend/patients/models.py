@@ -35,6 +35,7 @@ class Patient(models.Model):
         "ПИНФЛ",
         max_length=14,
         blank=True,
+        null=True,
         unique=True,
         help_text="Персональный идентификационный номер физического лица (14 цифр)",
     )
@@ -42,6 +43,8 @@ class Patient(models.Model):
         "Паспорт",
         max_length=32,
         blank=True,
+        null=True,
+        unique=True,
         help_text="Серия и номер паспорта гражданина Узбекистана (AB 1234567)",
     )
     foreign_passport = models.CharField(
@@ -62,6 +65,13 @@ class Patient(models.Model):
         verbose_name = "Пациент"
         verbose_name_plural = "Пациенты"
         ordering = ["full_name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["passport"],
+                condition=~models.Q(passport=None) & ~models.Q(passport=""),
+                name="unique_passport_non_empty",
+            ),
+        ]
         indexes = [
             models.Index(fields=["full_name"]),
             models.Index(fields=["phone"]),
