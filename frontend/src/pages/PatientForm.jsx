@@ -22,14 +22,12 @@ export default function PatientForm() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
 
-  // Если есть username нового пациента из регистрации — подставляем ФИО из User
   useEffect(() => {
     const newUser = sessionStorage.getItem("newPatientUser");
     if (newUser) {
       setForm((prev) => ({
         ...prev,
         full_name: `${user?.last_name || ""} ${user?.first_name || ""} ${user?.middle_name || ""}`.trim() || newUser,
-        phone: user?.email || "",
         email: user?.email || "",
       }));
     }
@@ -52,10 +50,8 @@ export default function PatientForm() {
     setSaving(true);
     try {
       const payload = { ...form };
-      // Если есть новый пациент из регистрации — привязываем
       const newUser = sessionStorage.getItem("newPatientUser");
       if (newUser) {
-        // Ищем user_id по username (регистратор создал пользователя, теперь создаём карточку)
         try {
           const usersRes = await api.get("/users/");
           const users = usersRes.data.results || usersRes.data;
@@ -63,11 +59,8 @@ export default function PatientForm() {
           if (matchedUser) {
             payload.user = matchedUser.id;
           }
-        } catch {
-          // Если не нашли — ничего страшного, пациент создастся без user
-        }
+        } catch {}
       }
-      // Если авторизован пациент и не указан user
       if (!payload.user && user?.role === "patient") {
         payload.user = user.id;
       }
@@ -89,7 +82,6 @@ export default function PatientForm() {
         emergency_contact: "",
       });
 
-      // Если пациент сам себя регистрирует — идём на дашборд
       if (user?.role === "patient" || newUser) {
         setTimeout(() => navigate("/"), 1500);
       } else {
@@ -113,13 +105,13 @@ export default function PatientForm() {
   return (
     <div>
       <div className="page-header">
-        <h1>➕ Регистрация пациента</h1>
+        <h1>Регистрация пациента</h1>
         <p>Заполните форму для создания карточки пациента</p>
       </div>
 
       <div className="page-content" style={{ maxWidth: "800px" }}>
-        {error && <div className="error-message">{error}</div>}
-        {success && <div className="success-message">{success}</div>}
+        {error && <div className="alert alert-error">{error}</div>}
+        {success && <div className="alert alert-success">{success}</div>}
 
         <div className="card">
           <form onSubmit={handleSubmit}>
@@ -170,14 +162,9 @@ export default function PatientForm() {
                 <label>Группа крови</label>
                 <select className="input" name="blood_group" value={form.blood_group} onChange={handleChange}>
                   <option value="">Не указана</option>
-                  <option value="I+">I+</option>
-                  <option value="I-">I-</option>
-                  <option value="II+">II+</option>
-                  <option value="II-">II-</option>
-                  <option value="III+">III+</option>
-                  <option value="III-">III-</option>
-                  <option value="IV+">IV+</option>
-                  <option value="IV-">IV-</option>
+                  {["I+", "I-", "II+", "II-", "III+", "III-", "IV+", "IV-"].map((bg) => (
+                    <option key={bg} value={bg}>{bg}</option>
+                  ))}
                 </select>
               </div>
               <div className="form-group">
@@ -191,9 +178,9 @@ export default function PatientForm() {
               <input className="input" name="address" value={form.address} onChange={handleChange} placeholder="Город, улица, дом" />
             </div>
 
-            <div className="flex flex-gap mt-4">
+            <div style={{ display: "flex", gap: "12px", marginTop: "16px" }}>
               <button type="submit" className="btn btn-primary btn-lg" disabled={saving}>
-                {saving ? "Сохранение..." : "💾 Зарегистрировать"}
+                {saving ? "Сохранение..." : "Зарегистрировать"}
               </button>
               <button type="button" className="btn btn-outline btn-lg" onClick={() => navigate("/patients")}>
                 Отмена

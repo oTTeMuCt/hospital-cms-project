@@ -57,10 +57,11 @@ class AppointmentSerializer(serializers.ModelSerializer):
 
             if overlapping.exists():
                 conflict = overlapping.first()
+                end_time_str = conflict.end_time.strftime("%H:%M") if conflict.end_time else "?"
                 raise serializers.ValidationError(
                     f"Врач уже занят в это время. Конфликт с приёмом #{conflict.pk}: "
                     f"{conflict.scheduled_at:%d.%m.%Y %H:%M} — "
-                    f"{conflict.end_time:%H:%M if conflict.end_time else '?'}"
+                    f"{end_time_str}"
                 )
 
         return data

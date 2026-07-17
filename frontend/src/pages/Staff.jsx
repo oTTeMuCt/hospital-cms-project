@@ -11,11 +11,8 @@ export default function Staff() {
       try {
         const res = await api.get("/staff/");
         setStaff(res.data.results || res.data);
-      } catch {
-        setError("Ошибка загрузки");
-      } finally {
-        setLoading(false);
-      }
+      } catch { setError("Ошибка загрузки"); }
+      finally { setLoading(false); }
     };
     fetchData();
   }, []);
@@ -25,11 +22,11 @@ export default function Staff() {
   return (
     <div>
       <div className="page-header">
-        <h1>👨‍⚕️ Сотрудники</h1>
+        <h1>Сотрудники</h1>
         <p>Управление персоналом медицинских учреждений</p>
       </div>
       <div className="page-content">
-        {error && <div className="error-message">{error}</div>}
+        {error && <div className="alert alert-error">{error}</div>}
         {staff.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">👨‍⚕️</div>
@@ -39,19 +36,11 @@ export default function Staff() {
         ) : (
           <div className="table-wrap">
             <table>
-              <thead>
-                <tr>
-                  <th>ФИО</th>
-                  <th>Должность</th>
-                  <th>Больница</th>
-                  <th>Отделение</th>
-                  <th>Телефон</th>
-                </tr>
-              </thead>
+              <thead><tr><th>ФИО</th><th>Должность</th><th>Больница</th><th>Отделение</th><th>Телефон</th></tr></thead>
               <tbody>
                 {staff.map((s) => (
                   <tr key={s.id}>
-                    <td style={{ fontWeight: 700 }}>
+                    <td style={{ fontWeight: 600 }}>
                       {s.user_full_name || s.user_name || s.user?.full_name_display || `${s.user?.first_name || ""} ${s.user?.last_name || ""}`.trim() || `#${s.user}`}
                     </td>
                     <td>{s.position || "—"}</td>

@@ -13,6 +13,7 @@ export default function Sidebar() {
       { to: "/patients", icon: "👤", label: "Пациенты" },
       { to: "/appointments", icon: "📅", label: "Приёмы" },
       { to: "/analyses", icon: "🔬", label: "Анализы" },
+      { to: "/reports", icon: "📈", label: "Отчёты" },
       { to: "/audit", icon: "📋", label: "Журнал" },
     ],
     chief_doctor: [
