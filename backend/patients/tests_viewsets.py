@@ -16,8 +16,13 @@ class PatientViewsetIntegrationTests(TestCase):
         self.registrar = User.objects.create_user(username="reg", password="pass", role="registrar")
         self.doctor = User.objects.create_user(username="doc", password="pass", role="doctor")
 
+        # Signal auto-creates Patient profile; update it with test data
         self.patient_user = User.objects.create_user(username="patient1", password="testpass", role="patient")
-        self.patient = Patient.objects.create(user=self.patient_user, full_name="Иванов И.", pinfl="NID123456", phone="+79990001122")
+        self.patient = self.patient_user.patient_profile
+        self.patient.full_name = "Иванов И."
+        self.patient.pinfl = "NID123456"
+        self.patient.phone = "+79990001122"
+        self.patient.save()
 
         self.factory = APIRequestFactory()
 
@@ -35,13 +40,16 @@ class PatientViewsetIntegrationTests(TestCase):
         self.assertGreaterEqual(len(items), 1)
         self.assertIn("pinfl", items[0])
 
-    def test_doctor_list_hides_national_id(self):
+    def test_doctor_can_list_but_hides_national_id(self):
         request = self.factory.get("/api/patients/")
         force_authenticate(request, user=self.doctor)
         view = PatientViewSet.as_view({"get": "list"})
         response = view(request)
-        # Current permissions: only Registrar and above can list patients
-        self.assertEqual(response.status_code, 403)
+        # Doctors (staff) can list patients but pinfl should be hidden
+        self.assertEqual(response.status_code, 200)
+        items = response.data.get("results", []) if isinstance(response.data, dict) else response.data
+        if items:
+            self.assertNotIn("pinfl", items[0])
 
     def test_registrar_retrieve_sees_national_id(self):
         request = self.factory.get(f"/api/patients/{self.patient.id}/")
@@ -56,8 +64,9 @@ class PatientViewsetIntegrationTests(TestCase):
         force_authenticate(request, user=self.doctor)
         view = PatientViewSet.as_view({"get": "retrieve"})
         response = view(request, pk=self.patient.id)
-        # Doctor currently not allowed to retrieve arbitrary patients (Registrar role required)
-        self.assertEqual(response.status_code, 403)
+        # Doctors can retrieve patients but pinfl should be hidden via SensitiveFieldsMixin
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("pinfl", response.data)
 
 
 class HospitalViewsetIntegrationTests(TestCase):

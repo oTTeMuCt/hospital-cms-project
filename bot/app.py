@@ -109,16 +109,31 @@ def _fetch_analyses(passport: str) -> dict:
         # Force UTF-8 — slim containers lack locale info, so requests
         # may misdetect the charset and mangle Cyrillic text.
         resp.encoding = "utf-8"
-        return {"status_code": resp.status_code, **resp.json()}
+
+        try:
+            body = resp.json()
+        except ValueError:
+            logger.error(
+                "Backend returned non-JSON response (status=%s). Body: %s",
+                resp.status_code,
+                resp.text[:2000],
+            )
+            return {
+                "status_code": resp.status_code,
+                "error": "Бэкенд вернул некорректный ответ. Попробуйте позже.",
+            }
+
+        return {"status_code": resp.status_code, **body}
+
     except requests.exceptions.Timeout:
         logger.error("Timeout fetching analyses for passport %s", passport)
         return {"status_code": 0, "error": "Сервер не отвечает. Попробуйте позже."}
     except requests.exceptions.ConnectionError:
-        logger.error("Connection error fetching analyses")
+        logger.error("Connection error fetching analyses for passport %s", passport)
         return {"status_code": 0, "error": "Не удалось подключиться к серверу."}
     except Exception as exc:
-        logger.error("Unexpected error: %s", exc)
-        return {"status_code": 0, "error": "Произошла неизвестная ошибка."}
+        logger.exception("Unexpected error fetching analyses for passport %s", passport)
+        return {"status_code": 0, "error": "Произошла неизвестная ошибка. Попробуйте позже."}
 
 
 def _format_analyses(data: dict) -> tuple[str, str]:

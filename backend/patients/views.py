@@ -39,7 +39,9 @@ class PatientViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        qs = Patient.objects.select_for_update() if self.action in ("create", "update", "partial_update", "destroy") else Patient.objects.all()
+        qs = Patient.objects.all()
+        if self.action in ("create", "update", "partial_update", "destroy"):
+            qs = Patient.objects.select_for_update()
         if user.role == "patient":
             return qs.filter(user=user)
         if user.role in ("doctor", "chief_doctor", "lab_tech", "registrar", "admin"):
