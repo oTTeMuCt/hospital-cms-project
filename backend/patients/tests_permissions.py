@@ -20,8 +20,12 @@ class SensitiveFieldsTests(TestCase):
         self.registrar = User.objects.create_user(username="reg", password="pass", role="registrar")
         self.doctor = User.objects.create_user(username="doc", password="pass", role="doctor")
 
+        # Signal auto-creates Patient profile; update it with test data
         self.patient_user = User.objects.create_user(username="patient1", password="testpass", role="patient")
-        self.patient = Patient.objects.create(user=self.patient_user, full_name="Иванов И.", pinfl="NID123456")
+        self.patient = self.patient_user.patient_profile
+        self.patient.full_name = "Иванов И."
+        self.patient.pinfl = "NID123456"
+        self.patient.save()
 
         self.hospital = Hospital.objects.create(name="Hosp", short_name="H1", timezone="Europe/Moscow", country_code="RU")
 

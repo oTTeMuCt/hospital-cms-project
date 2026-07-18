@@ -9,7 +9,7 @@ export default function Patients() {
   const [search, setSearch] = useState("");
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [editModal, setEditModal] = useState(null);
-  const [editForm, setEditForm] = useState({ full_name: "", birth_date: "", gender: "", blood_group: "", phone: "", email: "", address: "", emergency_contact: "" });
+  const [editForm, setEditForm] = useState({ full_name: "", birth_date: "", gender: "", blood_group: "", pinfl: "", passport: "", phone: "", email: "", address: "", emergency_contact: "" });
   const [saving, setSaving] = useState(false);
   const navigate = useNavigate();
 
@@ -45,6 +45,8 @@ export default function Patients() {
       birth_date: p.birth_date || "",
       gender: p.gender || "",
       blood_group: p.blood_group || "",
+      pinfl: p.pinfl || "",
+      passport: p.passport || "",
       phone: p.phone || "",
       email: p.email || "",
       address: p.address || "",
@@ -223,6 +225,16 @@ export default function Patients() {
                         <option value="male">Мужской</option>
                         <option value="female">Женский</option>
                       </select>
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>ПИНФЛ</label>
+                      <input className="input" value={editForm.pinfl} onChange={(e) => setEditForm({ ...editForm, pinfl: e.target.value })} placeholder="14 цифр" maxLength={14} />
+                    </div>
+                    <div className="form-group">
+                      <label>Паспорт</label>
+                      <input className="input" value={editForm.passport} onChange={(e) => setEditForm({ ...editForm, passport: e.target.value })} placeholder="AB1234567" />
                     </div>
                   </div>
                   <div className="form-row">
