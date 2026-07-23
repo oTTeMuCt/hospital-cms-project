@@ -58,11 +58,11 @@ export default function Register() {
         middle_name: form.middle_name.trim(),
         role: form.role,
       };
-      await api.post("/auth/register/", payload);
+      const regRes = await api.post("/auth/register/", payload);
       const isPatient = form.role === "patient";
       if (isPatient) {
         setSuccess(`Пользователь "${form.username}" успешно создан! Теперь заполните данные пациента.`);
-        sessionStorage.setItem("newPatientUser", form.username);
+        sessionStorage.setItem("newPatientUser", JSON.stringify({ id: regRes.data.id, username: form.username }));
         setTimeout(() => navigate("/patients/new"), 1500);
       } else {
         setSuccess(`Пользователь "${form.username}" успешно создан! Перенаправление на страницу входа...`);
