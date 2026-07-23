@@ -27,16 +27,17 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
+        // Use small page size to get count without fetching full data
         const [patientsRes, appointmentsRes, analysesRes] = await Promise.allSettled([
-          api.get("/patients/"),
-          api.get("/appointments/"),
-          api.get("/analysis-orders/"),
+          api.get("/patients/", { params: { page: 1, page_size: 1 } }),
+          api.get("/appointments/", { params: { page: 1, page_size: 1 } }),
+          api.get("/analysis-orders/", { params: { page: 1, page_size: 1 } }),
         ]);
 
         setStats({
-          patients: patientsRes.status === "fulfilled" ? patientsRes.value.data?.count || patientsRes.value.data?.length || "—" : "—",
-          appointments: appointmentsRes.status === "fulfilled" ? appointmentsRes.value.data?.count || appointmentsRes.value.data?.length || "—" : "—",
-          analyses: analysesRes.status === "fulfilled" ? analysesRes.value.data?.count || analysesRes.value.data?.length || "—" : "—",
+          patients: patientsRes.status === "fulfilled" ? patientsRes.value.data?.count || "—" : "—",
+          appointments: appointmentsRes.status === "fulfilled" ? appointmentsRes.value.data?.count || "—" : "—",
+          analyses: analysesRes.status === "fulfilled" ? analysesRes.value.data?.count || "—" : "—",
         });
       } catch {
         setError("Не удалось загрузить статистику");

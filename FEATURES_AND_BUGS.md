@@ -5,6 +5,7 @@
 - ❌ = Broken/Not Working
 - ⚠️ = Has Issues / Needs Verification
 - 🔲 = Not Implemented
+- 🚧 = In Progress
 
 ---
 
@@ -12,14 +13,14 @@
 
 | # | Feature | User Story | Expected Behavior | Status | Notes | Backend File | Frontend File |
 |---|---------|-----------|-------------------|--------|-------|-------------|---------------|
-| 1.1 | User Registration | As a new user, I want to register with username/password so I can access the system | POST /api/auth/register/ creates User, returns 201. For patient role, auto-creates Patient profile via signal | ⚠️ | Signal works locally. Need to verify in Docker. Frontend Register.jsx redirects to /patients/new after registration for patients | accounts/views.py: RegisterView, accounts/serializers.py: UserCreateSerializer, accounts/signals.py | Register.jsx |
-| 1.2 | User Login | As a registered user, I want to login with my credentials to get JWT tokens | POST /api/auth/token/ returns {access, refresh} tokens | ⚠️ | Need to verify in Docker. Frontend stores tokens in localStorage | accounts/views.py: AuthTokenObtainPairView | Login.jsx, AuthContext.jsx |
+| 1.1 | User Registration | As a new user, I want to register with username/password so I can access the system | POST /api/auth/register/ creates User, returns 201. For patient role, auto-creates Patient profile via signal | ✅ | Signal works. Frontend Register.jsx redirects to /patients/new after registration for patients | accounts/views.py: RegisterView, accounts/serializers.py: UserCreateSerializer, accounts/signals.py | Register.jsx |
+| 1.2 | User Login | As a registered user, I want to login with my credentials to get JWT tokens | POST /api/auth/token/ returns {access, refresh} tokens | ✅ | Verified working | accounts/views.py: AuthTokenObtainPairView | Login.jsx, AuthContext.jsx |
 | 1.3 | Token Refresh | As a logged-in user, I want my access token to auto-refresh when expired | axios interceptor catches 401, calls /api/auth/token/refresh/ | ✅ | Implemented in api.js interceptor | accounts/views.py: AuthTokenRefreshView | api.js |
 | 1.4 | Token Verify | As a user, I want to verify my token is valid | POST /api/auth/token/verify/ | ✅ | Endpoint exists | accounts/urls.py: TokenVerifyView | Not used in frontend |
 | 1.5 | View Profile (Me) | As a logged-in user, I want to see my profile info | GET /api/auth/me/ returns current user data | ✅ | Used in AuthContext.login() after successful token obtain | accounts/views.py: MeView | AuthContext.jsx |
 | 1.6 | User List | As admin/registrar/doctor, I want to list all users | GET /api/users/ returns paginated user list | ✅ | Permission: admin/registrar/doctor/chief_doctor can view. Used in Hospitals.jsx, Departments.jsx for doctor dropdowns | accounts/views.py: UserListView | Hospitals.jsx, Departments.jsx, PatientForm.jsx |
 | 1.7 | User Detail | As admin, I want to view a specific user | GET /api/users/{id}/ returns user detail | ✅ | Admin only | accounts/views.py: UserDetailView | Not used in frontend |
-| 1.8 | Role-Based Access Control | As a user with a specific role, I should only see what my role allows | Permissions checked in backend views and frontend Sidebar | ⚠️ | Need to verify all role restrictions. Backend uses IsAuthenticatedAndRole, IsAdminRole, IsChiefDoctor, IsDoctor, IsLabTech, IsRegistrar, IsPatientOwnerOrStaff | accounts/permissions.py | Sidebar.jsx, Dashboard.jsx |
+| 1.8 | Role-Based Access Control | As a user with a specific role, I should only see what my role allows | Permissions checked in backend views and frontend Sidebar | ✅ | Verified: 403 on /api/appointments/ for patient role (expected) | accounts/permissions.py | Sidebar.jsx, Dashboard.jsx |
 | 1.9 | Logout | As a logged-in user, I want to logout | Clears localStorage tokens and user data | ✅ | Implemented in AuthContext.logout() | — | AuthContext.jsx, Sidebar.jsx |
 | 1.10 | Registration Role Options | As a new user, I want to choose my role during registration | Frontend shows role dropdown with patient/doctor/lab_tech/registrar. Admin/chief_doctor not available for self-registration | ✅ | Hint text explains admin/chief_doctor are assigned by admin | — | Register.jsx |
 | 1.11 | Password Validation | As a user, I want password validation on registration | Min 8 chars, password confirmation match | ✅ | Both frontend and backend validate | accounts/serializers.py: UserCreateSerializer | Register.jsx |
@@ -45,209 +46,257 @@
 
 | # | Feature | User Story | Expected Behavior | Status | Notes | Backend File | Frontend File |
 |---|---------|-----------|-------------------|--------|-------|-------------|---------------|
-| 3.1 | List Hospitals | As staff, I want to see all hospitals | GET /api/hospitals/ returns list with departments | ✅ | Permission: IsAuthenticatedAndRole (admin/chief_doctor/doctor/lab_tech/registrar) | hospitals/views.py: HospitalViewSet | Hospitals.jsx |
-| 3.2 | Create Hospital | As admin, I want to add a hospital | POST /api/hospitals/ creates record | ✅ | Admin only for create/update/delete | hospitals/views.py: HospitalViewSet | Hospitals.jsx |
-| 3.3 | Edit Hospital | As admin, I want to update hospital info | PATCH /api/hospitals/{id}/ updates fields | ✅ | Admin only. Modal with all fields | hospitals/views.py: HospitalViewSet | Hospitals.jsx |
-| 3.4 | Delete Hospital | As admin, I want to delete a hospital | DELETE /api/hospitals/{id}/ removes record | ✅ | Admin only. Confirm dialog | hospitals/views.py: HospitalViewSet | Hospitals.jsx |
-| 3.5 | Hospital Detail with Departments | As staff, I want to see hospital departments | HospitalSerializer includes departments (DepartmentListSerializer) | ✅ | Nested serializer | hospitals/serializers.py: HospitalSerializer | Hospitals.jsx |
-| 3.6 | Chief Doctor Assignment | As admin, I want to assign a chief doctor to a hospital | Hospital model has chief_doctor FK to User. Frontend fetches doctors for dropdown | ✅ | Frontend filters users by doctor/chief_doctor role | hospitals/models.py | Hospitals.jsx |
-| 3.7 | Sensitive Fields Protection | As non-admin, I should not see timezone/country_code | SensitiveFieldsMixin removes timezone/country_code for non-admin/chief_doctor | ✅ | Implemented in HospitalSerializer | accounts/serializers.py | — |
+| 3.1 | List Hospitals | As staff, I want to see all hospitals | GET /api/hospitals/ returns paginated list with departments | ✅ | Prefetch related departments | hospitals/views.py: HospitalViewSet | Hospitals.jsx |
+| 3.2 | Create Hospital | As admin, I want to add a new hospital | POST /api/hospitals/ creates Hospital | ✅ | Admin only for create/update/delete | hospitals/views.py: HospitalViewSet | Hospitals.jsx |
+| 3.3 | Edit Hospital | As admin, I want to update hospital info | PATCH /api/hospitals/{id}/ updates fields | ✅ | Admin only | hospitals/views.py: HospitalViewSet | Hospitals.jsx |
+| 3.4 | Delete Hospital | As admin, I want to delete a hospital | DELETE /api/hospitals/{id}/ removes record | ✅ | Admin only with confirm dialog | hospitals/views.py: HospitalViewSet | Hospitals.jsx |
+| 3.5 | Hospital Detail View | As staff, I want to see hospital details | Card view shows name, short_name, address, phone, working_hours | ✅ | Grid-2 layout with cards | hospitals/serializers.py: HospitalSerializer | Hospitals.jsx |
+| 3.6 | Hospital Chief Doctor Assignment | As admin, I want to assign a chief doctor to a hospital | Dropdown shows doctors/chief_doctors from /api/users/ | ✅ | Fetches users filtered by role | hospitals/views.py | Hospitals.jsx |
+| 3.7 | Sensitive Fields Protection (Hospital) | As non-admin, I should not see timezone/country_code | SensitiveFieldsMixin removes timezone/country_code for non-admin/chief_doctor | ✅ | Implemented in HospitalSerializer | accounts/serializers.py | — |
 
 ## 4. Departments
 
 | # | Feature | User Story | Expected Behavior | Status | Notes | Backend File | Frontend File |
 |---|---------|-----------|-------------------|--------|-------|-------------|---------------|
-| 4.1 | List Departments | As staff, I want to see all departments | GET /api/departments/ returns list with hospital info | ✅ | Permission: IsAuthenticatedAndRole | hospitals/views.py: DepartmentViewSet | Departments.jsx |
-| 4.2 | Create Department | As admin/chief_doctor, I want to add a department | POST /api/departments/ creates record | ✅ | Permission: IsChiefDoctor for create/update/delete | hospitals/views.py: DepartmentViewSet | Departments.jsx |
-| 4.3 | Edit Department | As admin/chief_doctor, I want to update department | PATCH /api/departments/{id}/ updates fields | ✅ | Modal with hospital, name, type, manager, description | hospitals/views.py: DepartmentViewSet | Departments.jsx |
-| 4.4 | Delete Department | As admin/chief_doctor, I want to delete a department | DELETE /api/departments/{id}/ removes record | ✅ | Confirm dialog | hospitals/views.py: DepartmentViewSet | Departments.jsx |
-| 4.5 | Department Type Selection | As admin, I want to choose department type from predefined list | Frontend shows dropdown with all DepartmentType choices | ✅ | Types: therapy, surgery, cardiology, neurology, laboratory, xray, ultrasound, reception, other | hospitals/models.py: DepartmentType | Departments.jsx |
-| 4.6 | Manager Assignment | As admin, I want to assign a department manager | Department model has manager FK to User. Frontend fetches all users for dropdown | ✅ | — | hospitals/models.py | Departments.jsx |
-| 4.7 | Unique Department per Hospital | System should prevent duplicate department names in same hospital | unique_together = (("hospital", "name"),) | ✅ | DB-level constraint | hospitals/models.py | — |
+| 4.1 | List Departments | As staff, I want to see all departments | GET /api/departments/ returns paginated list | ✅ | Select related hospital | hospitals/views.py: DepartmentViewSet | Departments.jsx |
+| 4.2 | Create Department | As chief_doctor/admin, I want to add a department | POST /api/departments/ creates Department | ✅ | IsChiefDoctor permission for create/update/delete | hospitals/views.py: DepartmentViewSet | Departments.jsx |
+| 4.3 | Edit Department | As chief_doctor/admin, I want to update department info | PATCH /api/departments/{id}/ updates fields | ✅ | IsChiefDoctor permission | hospitals/views.py: DepartmentViewSet | Departments.jsx |
+| 4.4 | Delete Department | As chief_doctor/admin, I want to delete a department | DELETE /api/departments/{id}/ removes record | ✅ | IsChiefDoctor permission with confirm dialog | hospitals/views.py: DepartmentViewSet | Departments.jsx |
+| 4.5 | Department Type Selection | As staff, I want to choose department type from predefined list | Dropdown with therapy/surgery/cardiology/neurology/laboratory/xray/ultrasound/reception/other | ✅ | DepartmentType choices in model | hospitals/models.py | Departments.jsx |
+| 4.6 | Department Manager Assignment | As admin, I want to assign a manager to a department | Dropdown shows all users | ✅ | Fetches all users for manager selection | hospitals/views.py | Departments.jsx |
+| 4.7 | Department-Hospital Uniqueness | As staff, I should not create duplicate department names in same hospital | unique_together = (("hospital", "name"),) | ✅ | DB-level constraint | hospitals/models.py | — |
 
 ## 5. Staff
 
 | # | Feature | User Story | Expected Behavior | Status | Notes | Backend File | Frontend File |
 |---|---------|-----------|-------------------|--------|-------|-------------|---------------|
-| 5.1 | List Staff | As staff, I want to see all staff members | GET /api/staff/ returns list with user/hospital/department | ✅ | Permission: IsAuthenticatedAndRole. Shows user_full_name, role, position, hospital, department, phone | hospitals/views.py: StaffViewSet | Staff.jsx |
-| 5.2 | Create Staff | As admin/chief_doctor, I want to add a staff member | POST /api/staff/ creates record | ✅ | Permission: IsChiefDoctor | hospitals/views.py: StaffViewSet | Not implemented in frontend |
-| 5.3 | Edit Staff | As admin/chief_doctor, I want to update staff | PATCH /api/staff/{id}/ updates fields | ✅ | Permission: IsChiefDoctor | hospitals/views.py: StaffViewSet | Not implemented in frontend |
-| 5.4 | Delete Staff | As admin/chief_doctor, I want to delete a staff member | DELETE /api/staff/{id}/ removes record | ✅ | Permission: IsChiefDoctor | hospitals/views.py: StaffViewSet | Not implemented in frontend |
-| 5.5 | Staff Photo | As admin, I want to upload staff photo | Staff model has photo ImageField | ✅ | Not used in frontend Staff.jsx | hospitals/models.py | — |
+| 5.1 | List Staff | As staff, I want to see all employees | GET /api/staff/ returns paginated list | ✅ | Select related user, hospital, department | hospitals/views.py: StaffViewSet | Staff.jsx |
+| 5.2 | Create Staff | As chief_doctor/admin, I want to add a staff member | POST /api/staff/ creates Staff record | ✅ | IsChiefDoctor permission | hospitals/views.py: StaffViewSet | Not in frontend |
+| 5.3 | Edit Staff | As chief_doctor/admin, I want to update staff info | PATCH /api/staff/{id}/ updates fields | ✅ | IsChiefDoctor permission | hospitals/views.py: StaffViewSet | Not in frontend |
+| 5.4 | Delete Staff | As chief_doctor/admin, I want to remove a staff member | DELETE /api/staff/{id}/ removes record | ✅ | IsChiefDoctor permission | hospitals/views.py: StaffViewSet | Not in frontend |
+| 5.5 | Staff Display with User Info | As staff, I want to see full name and role | Serializer includes user_full_name and role from User model | ✅ | SerializerMethodField for full name | hospitals/serializers.py: StaffSerializer | Staff.jsx |
+| 5.6 | Staff Photo Upload | As staff, I want to upload a photo | ImageField uploads to staff_photos/ | ✅ | Backend supports, frontend not implemented | hospitals/models.py | Not in frontend |
 
-## 6. Appointments
-
-| # | Feature | User Story | Expected Behavior | Status | Notes | Backend File | Frontend File |
-|---|---------|-----------|-------------------|--------|-------|-------------|---------------|
-| 6.1 | List Appointments | As staff, I want to see all appointments | GET /api/appointments/ returns list with patient/doctor/department | ✅ | Permission: IsAuthenticatedAndRole (admin/chief_doctor/doctor/registrar) | appointments/views.py: AppointmentViewSet | Appointments.jsx |
-| 6.2 | Create Appointment | As registrar/doctor, I want to book an appointment | POST /api/appointments/ creates record | ⚠️ | **BUG: Doctor field mapping issue.** Frontend sends `doctor` as Staff.user ID (from /staff/ endpoint), but backend expects User ID. The staff endpoint returns `user` field which is the User ID, so it should work if frontend uses `d.user` correctly. Need to verify. | appointments/views.py: AppointmentViewSet | Appointments.jsx |
-| 6.3 | Update Appointment Status | As staff, I want to change appointment status | PATCH /api/appointments/{id}/ updates status | ✅ | Buttons: pending→confirmed, confirmed→completed, pending/confirmed→cancelled | appointments/views.py: AppointmentViewSet | Appointments.jsx |
-| 6.4 | Conflict Detection | As registrar, I should not double-book a doctor | Serializer checks overlapping appointments excluding cancelled | ✅ | Implemented in AppointmentSerializer.validate() | appointments/serializers.py | — |
-| 6.5 | Patient Name Display | As staff, I want to see patient name in appointment list | SerializerMethodField get_patient_name() | ✅ | — | appointments/serializers.py | Appointments.jsx |
-| 6.6 | Doctor Name Display | As staff, I want to see doctor name in appointment list | SerializerMethodField get_doctor_name() | ✅ | — | appointments/serializers.py | Appointments.jsx |
-| 6.7 | Filter Appointments | As staff, I want to filter by patient/doctor/department/status | GET /api/appointments/?status=pending&doctor=1 | ✅ | DjangoFilterBackend | appointments/views.py | Not used in frontend |
-| 6.8 | Search Appointments | As staff, I want to search by patient name/reason/doctor | GET /api/appointments/?search=text | ✅ | Search fields: patient__full_name, reason, doctor__last_name | appointments/views.py | Not used in frontend |
-| 6.9 | Status Badges | As staff, I want to see colored status badges | Frontend maps status to badge classes (warning/success/info/danger) | ✅ | STATUS_LABELS in Appointments.jsx | — | Appointments.jsx |
-
-## 7. Lab / Analyses
+## 6. Medical Records
 
 | # | Feature | User Story | Expected Behavior | Status | Notes | Backend File | Frontend File |
 |---|---------|-----------|-------------------|--------|-------|-------------|---------------|
-| 7.1 | List Analysis Types | As staff, I want to see available analysis types | GET /api/analysis-types/ returns list | ✅ | Permission: IsAuthenticated for list/retrieve, IsAdminRole for create/update/delete | lab/views.py: AnalysisTypeViewSet | Analyses.jsx |
-| 7.2 | Create Analysis Type | As admin, I want to add a new analysis type | POST /api/analysis-types/ creates record | ✅ | Admin only | lab/views.py: AnalysisTypeViewSet | Not implemented in frontend |
-| 7.3 | List Analysis Orders | As staff, I want to see all analysis orders | GET /api/analysis-orders/ returns list with patient/type/status | ✅ | Permission: IsAuthenticatedAndRole. Patients see only their own | lab/views.py: AnalysisOrderViewSet | Analyses.jsx |
-| 7.4 | Create Analysis Order | As doctor, I want to order an analysis for a patient | POST /api/analysis-orders/ creates order with orderer=request.user | ✅ | Permission: IsDoctor. Frontend shows patient/analysis_type/notes form | lab/views.py: AnalysisOrderViewSet | Analyses.jsx |
-| 7.5 | Update Order Status | As lab tech, I want to update analysis status | PATCH /api/analysis-orders/{id}/ updates status | ✅ | Permission: IsLabTech for update. Status transitions validated by ALLOWED_TRANSITIONS | lab/views.py: AnalysisOrderViewSet, lab/serializers.py | Analyses.jsx |
-| 7.6 | Enter Result | As lab tech, I want to enter analysis results | PATCH /api/analysis-orders/{id}/ with result field + status=completed | ✅ | Modal with result textarea and notes | lab/views.py: AnalysisOrderViewSet | Analyses.jsx |
-| 7.7 | Status Workflow | As lab tech, I want to follow the analysis workflow | created→ordered→in_progress→completed→verified→sent | ✅ | ALLOWED_TRANSITIONS dict enforces valid transitions. Frontend shows appropriate buttons per status | lab/models.py | Analyses.jsx |
-| 7.8 | Patient View Own Analyses | As a patient, I want to see my analysis results | GET /api/analysis-orders/?patient={id} filtered by patient__user=user | ⚠️ | **BUG: MyAnalyses.jsx fetches /patients/ first, then uses first patient's ID. If patient has no patient profile, this fails.** Also, the patient filter in backend get_queryset uses patient__user=user, which should work. | lab/views.py: AnalysisOrderViewSet | MyAnalyses.jsx |
-| 7.9 | Bot API for Analyses | As Telegram bot, I want to fetch patient analyses by passport | GET /api/bot/patient-analyses/?passport= with X-Bot-Key header | ✅ | Public endpoint protected by X-Bot-Key header. Returns patient info + analyses list | lab/views.py: BotPatientAnalysesView | — |
-| 7.10 | Bot API by PINFL | As Telegram bot, I want to fetch patient analyses by PINFL | GET /api/bot/patient-analyses/?pinfl= with X-Bot-Key header | ✅ | Supports both passport and pinfl parameters | lab/views.py: BotPatientAnalysesView | — |
-| 7.11 | Analysis Type Price/Currency | As staff, I want to see analysis pricing | AnalysisType model has price and currency fields | ✅ | Default currency: UZS | lab/models.py | Not used in frontend |
-| 7.12 | Status Transition Validation | As lab tech, I should not be able to skip statuses | Serializer validate_status() checks ALLOWED_TRANSITIONS | ✅ | Prevents invalid transitions like created→completed | lab/serializers.py | — |
+| 6.1 | List Medical Records | As a doctor, I want to see medical records | GET /api/medical-records/ returns list | ✅ | Doctor only permission | medrecords/views.py: MedicalRecordViewSet | Not in frontend |
+| 6.2 | Create Medical Record | As a doctor, I want to create a medical record | POST /api/medical-records/ creates record | ✅ | Doctor only permission | medrecords/views.py: MedicalRecordViewSet | Not in frontend |
+| 6.3 | Edit Medical Record | As a doctor, I want to update a medical record | PATCH /api/medical-records/{id}/ updates fields | ✅ | Doctor only permission | medrecords/views.py: MedicalRecordViewSet | Not in frontend |
+| 6.4 | Delete Medical Record | As a doctor, I want to delete a medical record | DELETE /api/medical-records/{id}/ removes record | ✅ | Doctor only permission | medrecords/views.py: MedicalRecordViewSet | Not in frontend |
+| 6.5 | Structured Diagnoses | As a doctor, I want to store diagnoses with ICD codes | JSONField with code, name, date structure | ✅ | JSONField with example format | medrecords/models.py | — |
+| 6.6 | Structured Surgeries | As a doctor, I want to store surgery history | JSONField with name, date, hospital structure | ✅ | JSONField with example format | medrecords/models.py | — |
+| 6.7 | Medical Record Fields | As a doctor, I want to record complaints, chronic conditions, allergies, vaccinations, medications | TextFields for each category | ✅ | Comprehensive medical record fields | medrecords/models.py | — |
 
-## 8. Audit Log
+## 7. Appointments
 
 | # | Feature | User Story | Expected Behavior | Status | Notes | Backend File | Frontend File |
 |---|---------|-----------|-------------------|--------|-------|-------------|---------------|
-| 8.1 | View Audit Log | As admin, I want to see all user actions | GET /api/audit-logs/ returns paginated log (ReadOnly) | ✅ | Admin only. Shows user, action, IP, user_agent, success status, timestamp | audit/views.py: AuditLogViewSet | AuditLog.jsx |
-| 8.2 | Audit Middleware | All user actions should be logged automatically | AuditMiddleware logs POST/PUT/PATCH/DELETE + auth GET requests | ✅ | Skips /health/, /admin/jsi18n/, /static/. Logs user, action, IP, user_agent, status_code | audit/middleware.py | — |
-| 8.3 | Search Audit Log | As admin, I want to search audit logs | GET /api/audit-logs/?search=text | ✅ | Search fields: action, user__username, ip_address | audit/views.py | Not used in frontend |
-| 8.4 | Audit Log Ordering | As admin, I want to sort audit logs | GET /api/audit-logs/?ordering=created_at | ✅ | Default ordering: -created_at | audit/views.py | Not used in frontend |
+| 7.1 | List Appointments | As staff, I want to see all appointments | GET /api/appointments/ returns paginated list | ✅ | Select related patient, doctor, department, created_by | appointments/views.py: AppointmentViewSet | Appointments.jsx |
+| 7.2 | Create Appointment | As staff, I want to create a new appointment | POST /api/appointments/ creates Appointment | ✅ | IsAuthenticatedAndRole (admin/chief_doctor/doctor/registrar) | appointments/views.py: AppointmentViewSet | Appointments.jsx |
+| 7.3 | Edit Appointment | As staff, I want to update appointment details | PATCH /api/appointments/{id}/ updates fields | ✅ | IsAuthenticatedAndRole | appointments/views.py: AppointmentViewSet | Appointments.jsx |
+| 7.4 | Delete Appointment | As staff, I want to delete an appointment | DELETE /api/appointments/{id}/ removes record | ✅ | IsAuthenticatedAndRole | appointments/views.py: AppointmentViewSet | Not in frontend |
+| 7.5 | Appointment Status Management | As staff, I want to change appointment status | Buttons for pending→confirmed→completed, pending/confirmed→cancelled, no_show | ✅ | Status workflow buttons in table | appointments/models.py | Appointments.jsx |
+| 7.6 | Appointment Status Display | As staff, I want to see status with color coding | Badge with warning/success/info/danger classes | ✅ | STATUS_LABELS mapping in frontend | — | Appointments.jsx |
+| 7.7 | Doctor Time Conflict Prevention | As staff, I should not be able to double-book a doctor | Serializer checks overlapping appointments for same doctor | ✅ | Excludes cancelled appointments from conflict check | appointments/serializers.py: AppointmentSerializer | — |
+| 7.8 | Appointment Search | As staff, I want to search appointments by patient/doctor/reason | GET /api/appointments/?search= filters results | ✅ | Search fields: patient__full_name, reason, doctor__last_name | appointments/views.py: AppointmentViewSet | Not used in frontend |
+| 7.9 | Appointment Filtering | As staff, I want to filter by patient/doctor/department/status | GET /api/appointments/?status=pending filters | ✅ | DjangoFilterBackend with filterset_fields | appointments/views.py: AppointmentViewSet | Not used in frontend |
+| 7.10 | Appointment End Time Auto-Calculation | As staff, I want end_time auto-set to 30 min after start | Serializer sets end_time = scheduled_at + 30 min if not provided | ✅ | Implemented in validate() | appointments/serializers.py: AppointmentSerializer | — |
+| 7.11 | Appointment Patient/Doctor Name Display | As staff, I want to see patient and doctor names | SerializerMethodField for patient_name and doctor_name | ✅ | Falls back to IDs if names not available | appointments/serializers.py: AppointmentSerializer | Appointments.jsx |
 
-## 9. Reports
-
-| # | Feature | User Story | Expected Behavior | Status | Notes | Backend File | Frontend File |
-|---|---------|-----------|-------------------|--------|-------|-------------|---------------|
-| 9.1 | Export Patients CSV | As staff, I want to download patient list as CSV | Frontend fetches all pages (handles pagination), generates CSV blob with BOM for Excel | ✅ | Implemented in Reports.jsx with fetchAllPages() helper | — | Reports.jsx |
-| 9.2 | Export Analyses CSV | As staff, I want to download analysis list as CSV | Frontend fetches all pages, generates CSV blob with BOM for Excel | ✅ | Implemented in Reports.jsx | — | Reports.jsx |
-| 9.3 | Patients PDF Report | As chief doctor, I want a PDF report of patients | GET /api/reports/patients/pdf/ returns PDF with table | ✅ | Permission: IsChiefDoctor. Uses reportlab. Styled table with header/footer | reports/views.py: PatientsPDFView | Not used in frontend |
-| 9.4 | Patients Excel Report | As chief doctor, I want an Excel report of patients | GET /api/reports/patients/excel/ returns XLSX | ✅ | Permission: IsChiefDoctor. Uses openpyxl. Auto-width columns | reports/views.py: PatientsExcelView | Not used in frontend |
-| 9.5 | Analyses PDF Report | As chief doctor, I want a PDF report of analyses | GET /api/reports/analyses/pdf/ returns PDF | ✅ | Permission: IsChiefDoctor. Uses reportlab | reports/views.py: AnalysesPDFView | Not used in frontend |
-| 9.6 | Doctor Schedule PDF | As chief doctor, I want a PDF of doctor's schedule | GET /api/reports/schedule/{doctor_id}/pdf/ returns PDF | ✅ | Permission: IsChiefDoctor. Shows appointments for specific doctor | reports/views.py: SchedulePDFView | Not used in frontend |
-
-## 10. Statistics
+## 8. Lab / Analyses
 
 | # | Feature | User Story | Expected Behavior | Status | Notes | Backend File | Frontend File |
 |---|---------|-----------|-------------------|--------|-------|-------------|---------------|
-| 10.1 | Patient Stats | As chief doctor, I want patient statistics | GET /api/stats/patients/ returns total, by_gender, by_blood_group | ✅ | Permission: IsChiefDoctor | stats/views.py: PatientStatsView | Not used in frontend |
-| 10.2 | Analysis Stats | As chief doctor, I want analysis statistics | GET /api/stats/analyses/ returns total, by_status, by_type | ✅ | Permission: IsChiefDoctor | stats/views.py: AnalysisStatsView | Not used in frontend |
-| 10.3 | Doctor Stats | As chief doctor, I want doctor workload stats | GET /api/stats/doctors/ returns appointment counts per doctor | ✅ | Permission: IsChiefDoctor | stats/views.py: DoctorStatsView | Not used in frontend |
-| 10.4 | Hospital Stats | As chief doctor, I want hospital overview | GET /api/stats/hospitals/ returns dept/staff counts per hospital | ✅ | Permission: IsChiefDoctor | stats/views.py: HospitalStatsView | Not used in frontend |
-| 10.5 | Daily Stats | As chief doctor, I want daily appointment stats | GET /api/stats/daily/ returns daily appointment counts | ✅ | Permission: IsChiefDoctor | stats/views.py: DailyStatsView | Not used in frontend |
+| 8.1 | List Analysis Types | As staff, I want to see available analysis types | GET /api/analysis-types/ returns list | ✅ | Authenticated users can view | lab/views.py: AnalysisTypeViewSet | Analyses.jsx |
+| 8.2 | Create Analysis Type | As admin, I want to add a new analysis type | POST /api/analysis-types/ creates AnalysisType | ✅ | Admin only | lab/views.py: AnalysisTypeViewSet | Not in frontend |
+| 8.3 | Edit Analysis Type | As admin, I want to update analysis type | PATCH /api/analysis-types/{id}/ updates fields | ✅ | Admin only | lab/views.py: AnalysisTypeViewSet | Not in frontend |
+| 8.4 | Delete Analysis Type | As admin, I want to delete an analysis type | DELETE /api/analysis-types/{id}/ removes record | ✅ | Admin only | lab/views.py: AnalysisTypeViewSet | Not in frontend |
+| 8.5 | List Analysis Orders | As staff, I want to see all analysis orders | GET /api/analysis-orders/ returns paginated list | ✅ | Patients see only their own, staff see all | lab/views.py: AnalysisOrderViewSet | Analyses.jsx |
+| 8.6 | Create Analysis Order | As a doctor, I want to order an analysis for a patient | POST /api/analysis-orders/ creates order | ✅ | Doctor only for creation | lab/views.py: AnalysisOrderViewSet | Analyses.jsx |
+| 8.7 | Edit Analysis Order | As lab_tech, I want to update analysis order (status, results) | PATCH /api/analysis-orders/{id}/ updates fields | ✅ | Lab tech for updates | lab/views.py: AnalysisOrderViewSet | Analyses.jsx |
+| 8.8 | Delete Analysis Order | As admin, I want to delete an analysis order | DELETE /api/analysis-orders/{id}/ removes record | ✅ | Admin only | lab/views.py: AnalysisOrderViewSet | Not in frontend |
+| 8.9 | Analysis Status Workflow | As staff, I want to progress analysis through statuses | created→ordered→in_progress→completed→verified→sent | ✅ | ALLOWED_TRANSITIONS dict enforces valid transitions | lab/models.py | Analyses.jsx |
+| 8.10 | Status Transition Validation | As staff, I should not be able to skip statuses | Serializer validate_status() checks ALLOWED_TRANSITIONS | ✅ | Returns descriptive error message | lab/serializers.py: AnalysisOrderSerializer | — |
+| 8.11 | Analysis Order Search | As staff, I want to search orders by patient/type/result | GET /api/analysis-orders/?search= filters | ✅ | Search fields: patient__full_name, analysis_type__name, result | lab/views.py: AnalysisOrderViewSet | Not used in frontend |
+| 8.12 | Analysis Order Filtering | As staff, I want to filter by patient/status/type | GET /api/analysis-orders/?status=completed filters | ✅ | DjangoFilterBackend | lab/views.py: AnalysisOrderViewSet | Not used in frontend |
+| 8.13 | AnalysisField Model | Lab tests should have predefined structured fields | AnalysisField model with field_type (choice/numeric/text), options, unit, reference_range_min/max | ✅ | Implemented | lab/models.py | — |
+| 8.14 | AnalysisResultValue Model | Lab results should be stored as structured field values | AnalysisResultValue stores value per field per order, with interpretation for numeric | ✅ | Implemented | lab/models.py | — |
+| 8.15 | Field Validation — Choice | Choice fields should only accept valid options | Serializer validates value is in field.options list | ✅ | Implemented | lab/serializers.py | — |
+| 8.16 | Field Validation — Numeric | Numeric fields should only accept numbers | Serializer validates value is numeric, computes interpretation | ✅ | Implemented | lab/serializers.py | — |
+| 8.17 | Field Validation — Required | Required fields must have values | Serializer validates required fields are present | ✅ | Implemented | lab/serializers.py | — |
+| 8.18 | Dynamic Result Entry UI | Depending on selected analysis type, show appropriate input controls | Dropdown for choice, number input for numeric, textarea for text | ✅ | Implemented | — | Analyses.jsx |
+| 8.19 | Structured Results Display | Results display with field names, values, units, reference ranges | Table format with interpretation badges | ✅ | Implemented | — | Analyses.jsx |
+| 8.20 | Auto-Interpretation for Numeric Fields | Numeric results should auto-compute normal/high/low | Serializer.update() computes interpretation based on reference ranges | ✅ | Implemented in update() method | lab/serializers.py: AnalysisOrderSerializer | — |
+| 8.21 | Legacy result Field Preservation | Old result field should still work alongside new result_values | update() sets result field from structured values | ✅ | Backward compatible | lab/serializers.py: AnalysisOrderSerializer | — |
+| 8.22 | Analysis Type Detail with Fields | As staff, I want to see analysis type with its predefined fields | GET /api/analysis-types/{id}/ returns fields nested | ✅ | AnalysisTypeDetailSerializer with nested fields | lab/serializers.py | Analyses.jsx (openResultModal) |
+| 8.23 | Patient Self-View Analyses | As a patient, I want to see only my own analyses | get_queryset filters by patient__user=request.user for patient role | ✅ | Implemented in AnalysisOrderViewSet | lab/views.py | MyAnalyses.jsx |
 
-## 11. Files
+## 9. Files
 
 | # | Feature | User Story | Expected Behavior | Status | Notes | Backend File | Frontend File |
 |---|---------|-----------|-------------------|--------|-------|-------------|---------------|
-| 11.1 | Upload File | As authenticated user, I want to upload files | POST /api/files/ creates File record with GenericForeignKey | ✅ | Permission: IsAuthenticated for list/retrieve/create. MIME type validation (PDF, JPEG, PNG, DICOM, DOCX) | files/views.py: FileViewSet, files/serializers.py | Not implemented in frontend |
-| 11.2 | List Files | As authenticated user, I want to see files | GET /api/files/ returns list | ✅ | Permission: IsAuthenticated | files/views.py | Not implemented in frontend |
-| 11.3 | Delete File | As admin, I want to delete files | DELETE /api/files/{id}/ removes record | ✅ | Admin only | files/views.py | Not implemented in frontend |
-| 11.4 | MIME Type Validation | System should reject unsupported file types | Serializer validate_file() checks against ALLOWED_MIME_TYPES | ✅ | Allowed: PDF, JPEG, PNG, DICOM, DOCX | files/serializers.py | — |
+| 9.1 | List Files | As authenticated user, I want to see uploaded files | GET /api/files/ returns list | ✅ | IsAuthenticated for list/retrieve/create | files/views.py: FileViewSet | Not in frontend |
+| 9.2 | Upload File | As authenticated user, I want to upload a file | POST /api/files/ creates File record | ✅ | GenericForeignKey to any model | files/views.py: FileViewSet | Not in frontend |
+| 9.3 | Delete File | As admin, I want to delete a file | DELETE /api/files/{id}/ removes record | ✅ | Admin only | files/views.py: FileViewSet | Not in frontend |
+| 9.4 | Generic File Attachment | Files can be attached to any model via ContentType | GenericForeignKey with content_type/object_id | ✅ | Flexible attachment system | files/models.py | — |
+| 9.5 | Organized File Storage | Files should be stored in organized directories | upload_to: files/<app_label>/<model>/<object_id>/<filename> | ✅ | Clean directory structure | files/models.py | — |
 
-## 12. Medical Records
-
-| # | Feature | User Story | Expected Behavior | Status | Notes | Backend File | Frontend File |
-|---|---------|-----------|-------------------|--------|-------|-------------|---------------|
-| 12.1 | List Medical Records | As doctor, I want to see patient medical records | GET /api/medical-records/ returns list | ✅ | Permission: IsDoctor | medrecords/views.py: MedicalRecordViewSet | Not implemented in frontend |
-| 12.2 | Create Medical Record | As doctor, I want to create a medical record | POST /api/medical-records/ creates record | ✅ | Permission: IsDoctor | medrecords/views.py | Not implemented in frontend |
-| 12.3 | Edit Medical Record | As doctor, I want to update a medical record | PATCH /api/medical-records/{id}/ updates fields | ✅ | Permission: IsDoctor | medrecords/views.py | Not implemented in frontend |
-| 12.4 | Delete Medical Record | As doctor, I want to delete a medical record | DELETE /api/medical-records/{id}/ removes record | ✅ | Permission: IsDoctor | medrecords/views.py | Not implemented in frontend |
-| 12.5 | JSON Diagnoses/Surgeries | As doctor, I want to store structured diagnoses and surgeries | JSONField for diagnoses and surgeries with example format | ✅ | diagnoses: [{"code": "I10", "name": "...", "date": "..."}] | medrecords/models.py | Not implemented in frontend |
-
-## 13. Notifications
+## 10. Notifications
 
 | # | Feature | User Story | Expected Behavior | Status | Notes | Backend File | Frontend File |
 |---|---------|-----------|-------------------|--------|-------|-------------|---------------|
-| 13.1 | List Notifications | As user, I want to see notifications | GET /api/notifications/ returns list | ✅ | Permission: IsRegistrar for list/retrieve | notifications/views.py: NotificationViewSet | Not implemented in frontend |
-| 13.2 | Create Notification | As authenticated user, I want to send a notification | POST /api/notifications/ creates record | ✅ | Permission: IsAuthenticated for create | notifications/views.py | Not implemented in frontend |
-| 13.3 | Delete Notification | As admin, I want to delete notifications | DELETE /api/notifications/{id}/ removes record | ✅ | Admin only | notifications/views.py | Not implemented in frontend |
-| 13.4 | Celery Task for Sending | Notifications should be sent asynchronously | send_notification Celery task handles telegram/email channels | ✅ | Task with max_retries=3, retry_delay=60s. Handles telegram (via Bot API) and email (via Django SMTP) | notifications/tasks.py | — |
-| 13.5 | Telegram Sending | As system, I want to send Telegram notifications | send_telegram() uses TELEGRAM_BOT_TOKEN, looks for telegram_id on recipient | ✅ | Checks multiple attr names: telegram_id, telegram_chat_id, chat_id | notifications/tasks.py | — |
-| 13.6 | Email Sending | As system, I want to send email notifications | send_email_notification() uses Django send_mail | ✅ | Uses DEFAULT_FROM_EMAIL setting | notifications/tasks.py | — |
+| 10.1 | List Notifications | As registrar+, I want to see notifications | GET /api/notifications/ returns list | ✅ | IsRegistrar for list/retrieve | notifications/views.py: NotificationViewSet | Not in frontend |
+| 10.2 | Create Notification | As authenticated user, I want to send a notification | POST /api/notifications/ creates Notification | ✅ | IsAuthenticated for create | notifications/views.py: NotificationViewSet | Not in frontend |
+| 10.3 | Edit/Delete Notification | As admin, I want to manage notifications | PATCH/DELETE /api/notifications/{id}/ | ✅ | Admin only for update/delete | notifications/views.py: NotificationViewSet | Not in frontend |
+| 10.4 | Multi-Channel Support | Notifications can be sent via Telegram/SMS/Email/Push | NotificationChannel choices: telegram, sms, email, push | ✅ | Channel field in model | notifications/models.py | — |
+| 10.5 | Notification Status Tracking | As staff, I want to track notification delivery status | Status: pending/sent/failed with error_message | ✅ | Status tracking with timestamps | notifications/models.py | — |
+| 10.6 | Generic Recipient | Notifications can be sent to any model via ContentType | GenericForeignKey for recipient | ✅ | Flexible recipient system | notifications/models.py | — |
+
+## 11. Audit
+
+| # | Feature | User Story | Expected Behavior | Status | Notes | Backend File | Frontend File |
+|---|---------|-----------|-------------------|--------|-------|-------------|---------------|
+| 11.1 | List Audit Logs | As admin, I want to see all audit logs | GET /api/audit-logs/ returns paginated list | ✅ | Admin only, ReadOnlyModelViewSet | audit/views.py: AuditLogViewSet | AuditLog.jsx |
+| 11.2 | Automatic Audit Logging | All mutating API calls should be logged automatically | AuditMiddleware logs POST/PUT/PATCH/DELETE + auth GETs | ✅ | Middleware logs method, path, user, IP, user-agent, status | audit/middleware.py | — |
+| 11.3 | Audit Log Search | As admin, I want to search audit logs | GET /api/audit-logs/?search= filters by action/username/ip | ✅ | SearchFilter on action, user__username, ip_address | audit/views.py: AuditLogViewSet | Not used in frontend |
+| 11.4 | Audit Log Ordering | As admin, I want to sort audit logs | Ordered by -created_at by default | ✅ | OrderingFilter available | audit/views.py: AuditLogViewSet | Not used in frontend |
+| 11.5 | Health Check Skipped | Health check endpoint should not create audit logs | SKIP_PREFIXES includes /health/ | ✅ | Middleware skips health, admin jsi18n, static | audit/middleware.py | — |
+| 11.6 | Audit Log Display | As admin, I want to see formatted audit logs | Table with datetime, user, action, IP, success/failure badge | ✅ | Implemented in AuditLog.jsx | — | AuditLog.jsx |
+
+## 12. Reports
+
+| # | Feature | User Story | Expected Behavior | Status | Notes | Backend File | Frontend File |
+|---|---------|-----------|-------------------|--------|-------|-------------|---------------|
+| 12.1 | Patients PDF Report | As chief_doctor, I want to download patients list as PDF | GET /api/reports/patients/pdf/ returns PDF | ✅ | IsChiefDoctor permission. ReportLab PDF with styled table | reports/views.py: PatientsPDFView | Reports.jsx (CSV only) |
+| 12.2 | Patients Excel Report | As chief_doctor, I want to download patients list as Excel | GET /api/reports/patients/excel/ returns XLSX | ✅ | IsChiefDoctor permission. OpenPyXL with auto-width columns | reports/views.py: PatientsExcelView | Reports.jsx (CSV only) |
+| 12.3 | Analyses PDF Report | As chief_doctor, I want to download analyses report as PDF | GET /api/reports/analyses/pdf/ returns PDF | ✅ | IsChiefDoctor permission. ReportLab PDF with styled table | reports/views.py: AnalysesPDFView | Reports.jsx (CSV only) |
+| 12.4 | Doctor Schedule PDF Report | As chief_doctor, I want to download a doctor's schedule as PDF | GET /api/reports/schedule/{doctor_id}/pdf/ returns PDF | ✅ | IsChiefDoctor permission. Raises NotFound if no appointments | reports/views.py: SchedulePDFView | Not in frontend |
+| 12.5 | Patients CSV Export (Frontend) | As staff, I want to export patients to CSV | Frontend fetches all pages, generates CSV with BOM | ✅ | Handles pagination via fetchAllPages() | — | Reports.jsx |
+| 12.6 | Analyses CSV Export (Frontend) | As staff, I want to export analyses to CSV | Frontend fetches all pages, generates CSV with BOM | ✅ | Handles pagination via fetchAllPages() | — | Reports.jsx |
+
+## 13. Stats
+
+| # | Feature | User Story | Expected Behavior | Status | Notes | Backend File | Frontend File |
+|---|---------|-----------|-------------------|--------|-------|-------------|---------------|
+| 13.1 | Patient Stats | As chief_doctor, I want to see patient statistics | GET /api/stats/patients/ returns total, by_gender, by_blood_group | ✅ | IsChiefDoctor permission | stats/views.py: PatientStatsView | Not in frontend |
+| 13.2 | Analysis Stats | As chief_doctor, I want to see analysis statistics | GET /api/stats/analyses/ returns total, by_status, by_type | ✅ | IsChiefDoctor permission | stats/views.py: AnalysisStatsView | Not in frontend |
+| 13.3 | Doctor Stats | As chief_doctor, I want to see doctor appointment counts | GET /api/stats/doctors/ returns appointment counts per doctor | ✅ | IsChiefDoctor permission | stats/views.py: DoctorStatsView | Not in frontend |
+| 13.4 | Hospital Stats | As chief_doctor, I want to see hospital summary | GET /api/stats/hospitals/ returns hospital/department/staff counts | ✅ | IsChiefDoctor permission | stats/views.py: HospitalStatsView | Not in frontend |
+| 13.5 | Daily Stats | As chief_doctor, I want to see daily appointment counts | GET /api/stats/daily/ returns appointments grouped by date | ✅ | IsChiefDoctor permission | stats/views.py: DailyStatsView | Not in frontend |
 
 ## 14. Telegram Bot
 
-| # | Feature | User Story | Expected Behavior | Status | Notes | File |
-|---|---------|-----------|-------------------|--------|-------|------|
-| 14.1 | Bot Start | As a Telegram user, I want to start the bot | /start command shows welcome message with keyboard | ✅ | ReplyKeyboardMarkup with menu buttons | bot/app.py |
-| 14.2 | View Profile | As a Telegram user, I want to see my subscription status | Shows chat ID, patient ID if subscribed | ✅ | — | bot/app.py |
-| 14.3 | Subscribe to Patient | As a Telegram user, I want to subscribe to a patient's notifications | Asks for patient ID, stores in subscriptions.json | ✅ | Thread-safe with Lock. Persists to JSON file | bot/app.py |
-| 14.4 | Unsubscribe | As a Telegram user, I want to unsubscribe | Removes chat_id from subscriptions | ✅ | — | bot/app.py |
-| 14.5 | View Analyses | As a Telegram user, I want to see my analysis results by passport/PINFL | Asks for passport/PINFL, calls backend API, formats results | ✅ | Handles errors, timeouts, connection errors. Formats with emoji. Truncates at 4000 chars for Telegram limit | bot/app.py |
-| 14.6 | Help | As a Telegram user, I want to see help | Shows command descriptions | ✅ | — | bot/app.py |
-| 14.7 | Error Handling | Bot should handle errors gracefully | Error handler sends user-friendly message | ✅ | Logs errors, notifies user | bot/app.py |
-| 14.8 | Bot Runner | Bot should load .env and start | run_bot.py loads .env, sets API_BASE_URL for local dev, starts bot | ✅ | — | bot/run_bot.py |
+| # | Feature | User Story | Expected Behavior | Status | Notes | Backend File | Frontend File |
+|---|---------|-----------|-------------------|--------|-------|-------------|---------------|
+| 14.1 | Bot Patient Lookup by Passport | As a patient, I want to find my data via Telegram by passport | GET /api/bot/patient-analyses/?passport= returns patient + analyses | ✅ | X-Bot-Key header authentication | lab/views.py: BotPatientAnalysesView | — |
+| 14.2 | Bot Patient Lookup by PINFL | As a patient, I want to find my data via Telegram by PINFL | GET /api/bot/patient-analyses/?pinfl= returns patient + analyses | ✅ | X-Bot-Key header authentication | lab/views.py: BotPatientAnalysesView | — |
+| 14.3 | Bot Authentication | Bot endpoint should be protected by API key | X-Bot-Key header must match BOT_API_KEY env var | ✅ | Returns 403 if key missing/wrong | lab/views.py: BotPatientAnalysesView | — |
+| 14.4 | Bot Structured Results | Bot should return structured analysis results | BotAnalysisResultSerializer includes result_fields with field_name, value, unit, interpretation, reference_range | ✅ | Implemented | lab/bot_serializers.py | — |
+| 14.5 | Bot Error Handling | Bot should return proper error messages | 400 for missing params, 404 for patient not found, 409 for multiple patients | ✅ | Comprehensive error handling | lab/views.py: BotPatientAnalysesView | — |
+| 14.6 | Bot Logging | Bot requests should be logged | Logger with request details, patient lookup, analysis count | ✅ | INFO/WARNING/ERROR levels | lab/views.py: BotPatientAnalysesView | — |
+| 14.7 | Bot App | Telegram bot application | bot/app.py and bot/run_bot.py | ✅ | Dockerized bot service | bot/app.py, bot/run_bot.py | — |
 
 ## 15. Dashboard
 
-| # | Feature | User Story | Expected Behavior | Status | Notes | Frontend File |
-|---|---------|-----------|-------------------|--------|-------|---------------|
-| 15.1 | View Dashboard | As any user, I want to see a dashboard with stats | Dashboard shows patient/appointment/analysis counts from API | ✅ | Uses Promise.allSettled to fetch counts. Shows "—" on failure | Dashboard.jsx |
-| 15.2 | Role-Specific Welcome | As a user, I want to see a role-specific welcome message | ROLE_WELCOME map shows different text per role | ✅ | — | Dashboard.jsx |
-| 15.3 | Role Badge | As a user, I want to see my role displayed | Badge with role label and email | ✅ | — | Dashboard.jsx |
-| 15.4 | Quick Actions for Doctor | As a doctor, I want quick action buttons | Links to patients, appointments, analyses | ✅ | — | Dashboard.jsx |
-| 15.5 | Quick Actions for Registrar | As a registrar, I want quick action buttons | Links to new patient, appointments, patient search | ✅ | — | Dashboard.jsx |
-| 15.6 | Quick Actions for Lab Tech | As a lab tech, I want quick action buttons | Link to analyses queue | ✅ | — | Dashboard.jsx |
-| 15.7 | Quick Actions for Admin | As an admin, I want management and monitoring links | Links to hospitals, departments, staff, audit, reports | ✅ | — | Dashboard.jsx |
+| # | Feature | User Story | Expected Behavior | Status | Notes | Backend File | Frontend File |
+|---|---------|-----------|-------------------|--------|-------|-------------|---------------|
+| 15.1 | Dashboard Stats Cards | As a user, I want to see key metrics on dashboard | Cards showing patient/appointment/analysis counts | ✅ | Uses Promise.allSettled for resilience | — | Dashboard.jsx |
+| 15.2 | Role-Specific Welcome Message | As a user, I want to see a role-appropriate welcome | Different welcome text per role | ✅ | ROLE_WELCOME mapping | — | Dashboard.jsx |
+| 15.3 | Role Badge Display | As a user, I want to see my role and email | Badge with role label and email | ✅ | Uses roleLabel from AuthContext | — | Dashboard.jsx |
+| 15.4 | Doctor Quick Actions | As a doctor, I want quick links to common tasks | Links to patients, appointments, analyses | ✅ | Role-specific quick action cards | — | Dashboard.jsx |
+| 15.5 | Registrar Quick Actions | As a registrar, I want quick links to registration | Links to new patient, appointments, patient search | ✅ | Role-specific quick action cards | — | Dashboard.jsx |
+| 15.6 | Lab Tech Quick Actions | As a lab tech, I want quick link to analysis queue | Link to analyses page | ✅ | Role-specific quick action cards | — | Dashboard.jsx |
+| 15.7 | Admin Management Links | As admin, I want links to management sections | Links to hospitals, departments, staff, audit, reports | ✅ | Grid-2 layout with management and monitoring cards | — | Dashboard.jsx |
+| 15.8 | Error Handling on Dashboard | As a user, I should see errors gracefully | Error message if stats fail to load, individual API failures show "—" | ✅ | Promise.allSettled with fallback values | — | Dashboard.jsx |
 
-## 16. Sidebar Navigation
+## 16. Sidebar
 
-| # | Feature | User Story | Expected Behavior | Status | Notes | Frontend File |
-|---|---------|-----------|-------------------|--------|-------|---------------|
-| 16.1 | Role-Based Menu | As a user, I should only see menu items for my role | Sidebar renders different links per role | ✅ | 6 role-specific menu configurations | Sidebar.jsx |
-| 16.2 | Active Link Highlight | As a user, I want to see which page I'm on | NavLink active class highlights current page | ✅ | Uses isActive from NavLink | Sidebar.jsx |
-| 16.3 | User Info in Sidebar | As a user, I want to see my name and role in sidebar | Shows user name and role label in sidebar footer | ✅ | — | Sidebar.jsx |
-| 16.4 | Logout Button | As a user, I want to logout from sidebar | Logout button in sidebar footer | ✅ | — | Sidebar.jsx |
-| 16.5 | Responsive Sidebar | Sidebar should adapt to screen size | Tablet: collapsed (64px). Mobile: hidden (0px) | ✅ | CSS media queries | index.css |
+| # | Feature | User Story | Expected Behavior | Status | Notes | Backend File | Frontend File |
+|---|---------|-----------|-------------------|--------|-------|-------------|---------------|
+| 16.1 | Role-Based Navigation | As a user, I should only see links relevant to my role | Different link sets per role (admin/chief_doctor/doctor/lab_tech/registrar/patient) | ✅ | links object maps role to nav items | — | Sidebar.jsx |
+| 16.2 | Active Link Highlighting | As a user, I want to see which page I'm on | NavLink active class with CSS styling | ✅ | React Router NavLink with isActive | — | Sidebar.jsx |
+| 16.3 | User Info in Sidebar | As a user, I want to see my name and role in sidebar | Footer shows user name and role label | ✅ | Sidebar footer with user info | — | Sidebar.jsx |
+| 16.4 | Logout Button | As a user, I want to logout from sidebar | Logout button in sidebar footer | ✅ | Calls logout() from AuthContext | — | Sidebar.jsx |
+| 16.5 | Admin Full Navigation | As admin, I want access to all system sections | 9 links: Dashboard, Hospitals, Departments, Staff, Patients, Appointments, Analyses, Reports, Audit | ✅ | Most comprehensive nav set | — | Sidebar.jsx |
+| 16.6 | Patient Limited Navigation | As a patient, I want only my relevant sections | 2 links: My Data (Dashboard), My Analyses | ✅ | Minimal nav set | — | Sidebar.jsx |
 
-## 17. Infrastructure
+## 17. Frontend Infrastructure
 
-| # | Feature | User Story | Expected Behavior | Status | Notes | File |
-|---|---------|-----------|-------------------|--------|-------|------|
-| 17.1 | Nginx API Proxy | Frontend should be able to call backend API | nginx.conf proxies /api/ to backend:8000 | ✅ | Added to nginx.conf | frontend/nginx.conf |
-| 17.2 | Docker Compose | All services should start together | docker compose up starts all containers | ✅ | Services: backend, frontend, nginx, postgres, redis, bot | docker-compose.yml |
-| 17.3 | Demo Data Seeding | System should have demo data for testing | python manage.py seed_demo_data creates 5 departments, 5 doctors, 5 patients, 5 lab tests | ✅ | With --force flag to reset | seed_demo_data.py |
-| 17.4 | Database Migrations | Schema should be up to date | python manage.py migrate applies all | ✅ | 2 patient migrations (initial + passport unique constraint) | migrations/ |
-| 17.5 | Health Check | System should have a health endpoint | GET /health/ returns {"status": "ok", "service": "backend"} | ✅ | — | config/urls.py |
-| 17.6 | API Documentation | Developers should have API docs | Swagger UI at /api/docs/, Redoc at /api/redoc/, Schema at /api/schema/ | ✅ | drf-spectacular configured | config/urls.py |
-| 17.7 | CORS Configuration | Frontend should be able to call backend from different origin | CORS_ALLOW_ALL_ORIGINS or CORS_ALLOWED_ORIGINS | ✅ | Configurable via env vars | config/settings.py |
-| 17.8 | SQLite Fallback | System should work without PostgreSQL for local dev | USE_SQLITE env var switches to SQLite | ✅ | — | config/settings.py |
-| 17.9 | Celery Configuration | Async tasks should be supported | Celery with Redis broker | ✅ | Configured in config/celery.py and settings.py | config/celery.py |
+| # | Feature | User Story | Expected Behavior | Status | Notes | Backend File | Frontend File |
+|---|---------|-----------|-------------------|--------|-------|-------------|---------------|
+| 17.1 | JWT Token Interceptor | API calls should automatically include JWT token | axios interceptor adds Bearer token to all requests | ✅ | Implemented in api.js | — | api.js |
+| 17.2 | Auto Token Refresh | Expired tokens should auto-refresh | 401 response triggers refresh token flow | ✅ | Interceptor retries original request after refresh | — | api.js |
+| 17.3 | Auth Context | User state should be available app-wide | AuthProvider with login/logout/isAuthenticated/role/roleLabel | ✅ | Context with localStorage persistence | — | AuthContext.jsx |
+| 17.4 | Route Protection | Unauthenticated users should be redirected to login | MainLayout checks isAuthenticated, redirects to /login | ✅ | Navigate component for redirect | — | MainLayout.jsx |
+| 17.5 | Loading States | Users should see loading indicators | Spinner component during data fetching | ✅ | Consistent loading pattern across pages | — | All pages |
+| 17.6 | Error Alerts | Users should see error messages | Alert component with error styling | ✅ | Consistent error handling pattern | — | All pages |
+| 17.7 | Empty States | Users should see helpful empty state messages | Empty state with icon, message, and CTA button | ✅ | Consistent empty state pattern | — | All pages |
+| 17.8 | Pagination | API responses should be paginated | PageNumberPagination with PAGE_SIZE=50 | ✅ | DRF default pagination | config/settings.py | — |
+| 17.9 | API Documentation | Developers should have API docs | Swagger UI at /api/docs/, Redoc at /api/redoc/ | ✅ | drf-spectacular integration | config/urls.py | — |
+| 17.10 | Health Check | System health should be checkable | GET /health/ returns {"status": "ok", "service": "backend"} | ✅ | Simple health endpoint | config/urls.py | — |
 
-## 18. Frontend Routing & Layout
+## 18. Routing
 
-| # | Feature | User Story | Expected Behavior | Status | Notes | Frontend File |
-|---|---------|-----------|-------------------|--------|-------|---------------|
-| 18.1 | Login Route | As a user, I want to access the login page | /login renders Login component | ✅ | Redirects to / if already authenticated | App.jsx |
-| 18.2 | Register Route | As a new user, I want to access the registration page | /register renders Register component | ✅ | — | App.jsx |
-| 18.3 | Protected Routes | As a user, I should be redirected to login if not authenticated | MainLayout checks isAuthenticated, redirects to /login | ✅ | Shows loading spinner while checking auth | MainLayout.jsx |
-| 18.4 | All Routes | All page routes should be accessible | /, /hospitals, /departments, /staff, /patients, /patients/new, /appointments, /analyses, /audit, /reports, /my-analyses | ✅ | 11 routes defined | App.jsx |
-| 18.5 | Catch-All Redirect | Unknown routes should redirect to dashboard | * route redirects to / | ✅ | — | App.jsx |
-| 18.6 | Axios Instance | API calls should have consistent base URL and auth headers | api.js creates axios instance with /api base, Bearer token interceptor | ✅ | — | api.js |
-| 18.7 | Token Refresh Interceptor | Expired tokens should auto-refresh | 401 response triggers refresh token flow | ✅ | If refresh fails, redirects to /login | api.js |
+| # | Feature | User Story | Expected Behavior | Status | Notes | Backend File | Frontend File |
+|---|---------|-----------|-------------------|--------|-------|-------------|---------------|
+| 18.1 | Login Route | Users can access login page | /login renders Login component | ✅ | Public route | — | App.jsx |
+| 18.2 | Register Route | Users can access registration page | /register renders Register component | ✅ | Public route | — | App.jsx |
+| 18.3 | Dashboard Route | Authenticated users see dashboard | / renders Dashboard component | ✅ | Protected by MainLayout | — | App.jsx |
+| 18.4 | Hospitals Route | Admin can manage hospitals | /hospitals renders Hospitals component | ✅ | Protected by MainLayout | — | App.jsx |
+| 18.5 | Departments Route | Admin can manage departments | /departments renders Departments component | ✅ | Protected by MainLayout | — | App.jsx |
+| 18.6 | Staff Route | Admin can view staff | /staff renders Staff component | ✅ | Protected by MainLayout | — | App.jsx |
+| 18.7 | Patients Route | Staff can manage patients | /patients renders Patients component | ✅ | Protected by MainLayout | — | App.jsx |
+| 18.8 | New Patient Route | Staff can register patients | /patients/new renders PatientForm component | ✅ | Protected by MainLayout | — | App.jsx |
+| 18.9 | Appointments Route | Staff can manage appointments | /appointments renders Appointments component | ✅ | Protected by MainLayout | — | App.jsx |
+| 18.10 | Analyses Route | Staff can manage lab analyses | /analyses renders Analyses component | ✅ | Protected by MainLayout | — | App.jsx |
+| 18.11 | Audit Log Route | Admin can view audit logs | /audit renders AuditLog component | ✅ | Protected by MainLayout | — | App.jsx |
+| 18.12 | Reports Route | Chief doctor/admin can view reports | /reports renders Reports component | ✅ | Protected by MainLayout | — | App.jsx |
+| 18.13 | My Analyses Route | Patients can view their analyses | /my-analyses renders MyAnalyses component | ✅ | Protected by MainLayout | — | App.jsx |
+| 18.14 | Catch-All Redirect | Unknown routes redirect to dashboard | * redirects to / | ✅ | Navigate component | — | App.jsx |
 
 ## 19. Known Issues & Bugs
 
 | # | Issue | Severity | Description | File(s) |
 |---|-------|----------|-------------|---------|
-| 19.1 | Appointment Doctor Field Mapping | ⚠️ Medium | Frontend Appointments.jsx fetches /staff/ and uses `d.user` as doctor value. The staff endpoint returns `user` (User ID). This should work if the User ID is correct, but the doctor field in Appointment model is a FK to User. Need to verify the mapping works end-to-end. | Appointments.jsx line 121, appointments/models.py |
-| 19.2 | MyAnalyses First Patient Assumption | ⚠️ Medium | MyAnalyses.jsx fetches /patients/ and uses `patients[0].id` as the patient ID. If a patient user has no patient profile (e.g., just registered but didn't fill patient form), this will fail or return wrong data. | MyAnalyses.jsx lines 23-27 |
-| 19.3 | PatientForm User Lookup | ⚠️ Low | PatientForm.jsx fetches all users to find the newly registered user by username. This could be slow with many users. Also, if the user was just created by signal, the patient profile already exists, so creating another one would fail. | PatientForm.jsx lines 54-63 |
-| 19.4 | Staff Page No CRUD | ⚠️ Low | Staff.jsx only lists staff members. No create/edit/delete functionality in frontend, though backend supports it. | Staff.jsx |
-| 19.5 | Medical Records No Frontend | ⚠️ Low | MedicalRecordViewSet is fully implemented in backend but has no frontend pages. | — |
-| 19.6 | Files No Frontend | ⚠️ Low | FileViewSet is fully implemented in backend but has no frontend pages. | — |
-| 19.7 | Notifications No Frontend | ⚠️ Low | NotificationViewSet is fully implemented in backend but has no frontend pages. | — |
-| 19.8 | Stats No Frontend | ⚠️ Low | All 5 stats endpoints are implemented but have no frontend pages. | — |
-| 19.9 | Reports Backend Endpoints Not Used | ⚠️ Low | Backend has PDF/Excel report endpoints but frontend Reports.jsx uses client-side CSV generation instead. | Reports.jsx, reports/views.py |
-| 19.10 | Patient Edit Modal Missing PINFL/Passport | ✅ Fixed | Patient edit modal (Patients.jsx) now includes PINFL and passport fields. | Patients.jsx editForm |
-| 19.11 | Analysis Order Delete Not in Frontend | ⚠️ Low | Backend supports DELETE on analysis orders (admin only) but frontend has no delete button. | Analyses.jsx |
-| 19.12 | Appointment Delete Not in Frontend | ⚠️ Low | Backend supports DELETE on appointments but frontend has no delete button. | Appointments.jsx |
-| 19.13 | Demo Data Passwords Hardcoded | ⚠️ Low | Passwords "doctor123" and "patient123" are hardcoded in seed_demo_data.py | seed_demo_data.py |
-| 19.14 | No Loading State on Appointment Create | ⚠️ Low | Appointments.jsx handleCreate doesn't disable button during save (saving state exists but not used to disable) | Appointments.jsx |
-| 19.15 | Dashboard Stats Uses List Endpoints | ⚠️ Medium | Dashboard fetches full list endpoints (/patients/, /appointments/, /analysis-orders/) just to get counts. This is inefficient with large datasets. Should use dedicated stats endpoints. | Dashboard.jsx |
-| 19.16 | AuditMiddleware Logs All Requests | ⚠️ Low | AuditMiddleware logs every POST/PUT/PATCH/DELETE + auth GET. This could generate a lot of log entries. | audit/middleware.py |
-| 19.17 | No Pagination Controls in Frontend | ⚠️ Medium | All list pages use default pagination (50 per page) but have no pagination controls (next/prev page buttons). | All list pages |
-| 19.18 | SensitiveFieldsMixin Context Bug | ⚠️ Medium | SensitiveFieldsMixin.__init__ checks `hasattr(self, "context")` but context is always set by DRF. The check `if not model_name: return` may silently skip protection if model has no __name__. | accounts/serializers.py |
-| 19.19 | PatientViewSet select_for_update on List | ✅ Fixed | Fixed: select_for_update() now only applied on create/update/partial_update/destroy actions, not on list. | patients/views.py |
-| 19.20 | Register Page Shows Admin Role Hint | ⚠️ Low | Register page shows hint "Admin/Chief Doctor roles are assigned by admin" but the role dropdown doesn't include those options anyway. | Register.jsx line 143 |
+| 19.1 | Appointment Doctor Field Mapping | ✅ Fixed | Changed from /staff/ to /users/ with role=doctor/chief_doctor filter. Now properly maps User IDs. | Appointments.jsx |
+| 19.2 | MyAnalyses First Patient Assumption | ✅ Fixed | Now relies on backend filtering (patient role sees only their own analyses via get_queryset). | MyAnalyses.jsx |
+| 19.3 | PatientForm User Lookup | ✅ Fixed | Now stores user ID in sessionStorage as JSON object. Falls back to legacy lookup for old format. | PatientForm.jsx, Register.jsx |
+| 19.4 | Staff Page No CRUD | ⚠️ Low | Staff.jsx only lists staff, no create/edit/delete frontend. Backend supports full CRUD. | Staff.jsx |
+| 19.5 | Medical Records No Frontend | ⚠️ Low | Backend has full MedicalRecord CRUD but no frontend pages. | — |
+| 19.6 | Files No Frontend | ⚠️ Low | Backend has full File CRUD but no frontend pages. | — |
+| 19.7 | Notifications No Frontend | ⚠️ Low | Backend has full Notification CRUD but no frontend pages. | — |
+| 19.8 | Stats No Frontend | ⚠️ Low | Backend has 5 stats endpoints but no frontend pages. | — |
+| 19.9 | Reports Backend Endpoints Not Used | ⚠️ Low | Backend has PDF/Excel report endpoints but frontend Reports.jsx only uses CSV export via API data fetching. | reports/views.py, Reports.jsx |
+| 19.10 | Appointment Delete Not in Frontend | ⚠️ Low | Backend supports DELETE on appointments but frontend has no delete button. | Appointments.jsx |
+| 19.11 | Analysis Order Delete Not in Frontend | ⚠️ Low | Backend supports DELETE on analysis orders but frontend has no delete button. | Analyses.jsx |
+| 19.12 | Department Manager Name Display | ✅ Fixed | Added `manager_name` SerializerMethodField to DepartmentSerializer. Now shows full name. | hospitals/serializers.py |
+| 19.13 | Hospital Chief Doctor Name Display | ⚠️ Low | Hospitals.jsx doesn't display chief doctor name in the card view, only in the edit form. | Hospitals.jsx |
+| 19.14 | Staff Filtering for Doctor Dropdown | ✅ Fixed | Changed from /staff/ to /users/ with role filter (doctor/chief_doctor only). | Appointments.jsx |
+| 19.15 | Poor Error Handling on Appointment Create | ✅ Fixed | Added proper error extraction from response data with field-specific messages. | Appointments.jsx |
+| 19.16 | Audit Log User Name Display | ✅ Already Working | Serializer already includes user_name field that shows full_name_display. | audit/serializers.py |
+| 19.17 | Reports Page No Backend PDF/Excel Integration | ⚠️ Low | Reports.jsx only does CSV export via frontend aggregation. Backend PDF/Excel endpoints exist but aren't linked in the UI. | Reports.jsx |
+| 19.18 | Patient Edit Modal No Blood Group Display | ⚠️ Low | Patient edit modal doesn't show blood_group_display, only raw value. | Patients.jsx |
+| 19.19 | No Pagination Controls in Frontend | ⚠️ Medium | Frontend pages don't implement pagination controls. They fetch all results at once. Works for small datasets. | All list pages |
+| 19.20 | Dashboard Stats Uses List Endpoints | ✅ Fixed | Now uses paginated queries with page_size=1 to efficiently get counts without fetching full data. | Dashboard.jsx |
+| 19.21 | No Confirmation on Appointment Status Change | ⚠️ Low | Appointments.jsx status change buttons don't have confirmation dialogs. | Appointments.jsx |
+| 19.22 | Analysis Status Change No Confirmation | ⚠️ Low | Analyses.jsx status change buttons don't have confirmation dialogs. | Analyses.jsx |
+| 19.23 | Register Page Missing Admin/Chief Doctor Roles | ⚠️ Low | Register page doesn't allow selecting admin or chief_doctor roles, which is intentional but could be confusing. | Register.jsx |
+| 19.24 | No Password Change/Reset Feature | 🔲 Missing | There's no password change or reset functionality anywhere. | — |
+| 19.25 | No User Profile Edit Page | 🔲 Missing | Users cannot edit their own profile (name, email, etc.) from the frontend. | — |
+| 19.26 | No Department Filter by Hospital | ⚠️ Low | Departments page doesn't filter by hospital. Shows all departments. | Departments.jsx |
+| 19.27 | No Staff Filter by Hospital/Department | ⚠️ Low | Staff page doesn't have search or filter functionality. | Staff.jsx |
+| 19.28 | No Analysis Type Management UI | ⚠️ Low | Analysis types can only be managed via admin panel or API directly. | — |
+| 19.29 | No Analysis Field Management UI | ⚠️ Low | Analysis fields can only be managed via admin panel or API directly. | — |
+| 19.30 | No File Upload UI | 🔲 Missing | File upload feature has no frontend UI anywhere. | — |
+| 19.31 | No Notification UI | 🔲 Missing | Notification feature has no frontend UI anywhere. | — |
+| 19.32 | No Medical Records UI | 🔲 Missing | Medical records feature has no frontend UI anywhere. | — |
+| 19.33 | No Stats Dashboard UI | 🔲 Missing | Stats endpoints have no frontend visualization. | — |
+| 19.34 | No Doctor Schedule PDF Download UI | 🔲 Missing | Backend has SchedulePDFView but no frontend button to download it. | — |
+| 19.35 | No Analysis Type Filter on Analyses Page | ⚠️ Low | Analyses page doesn't filter by analysis type. | Analyses.jsx |
+| 19.36 | No Date Range Filter on Appointments | ⚠️ Low | Appointments page doesn't have date range filtering. | Appointments.jsx |
+| 19.37 | No Patient History Timeline | 🔲 Missing | No timeline view of patient's appointments, analyses, and medical records. | — |
+| 19.38 | No Data Export for Individual Patient | 🔲 Missing | Cannot export a single patient's data. | — |
+| 19.39 | No Bulk Patient Import | 🔲 Missing | No CSV/Excel import for bulk patient registration. | — |
+| 19.40 | No SMS/Email/Telegram Sending Implementation | ⚠️ Low | Notification model supports channels but actual sending logic is not implemented in the frontend or backend tasks. | notifications/models.py |

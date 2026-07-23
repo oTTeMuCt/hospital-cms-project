@@ -16,7 +16,7 @@ from django.db import transaction
 
 from accounts.models import UserRole
 from hospitals.models import Department, DepartmentType, Hospital, Staff
-from lab.models import AnalysisType
+from lab.models import AnalysisField, AnalysisType
 from patients.models import Gender, Patient
 
 User = get_user_model()
@@ -227,19 +227,25 @@ class Command(BaseCommand):
 
     def _cleanup(self):
         """Remove existing demo data (identified by our known usernames/names)."""
+        from lab.models import AnalysisOrder, AnalysisResultValue
+
         demo_usernames = (
             [d["username"] for d in DOCTORS_DATA]
             + [p["username"] for p in PATIENTS_DATA]
         )
+
+        # Delete analysis orders first (they have PROTECT FK to AnalysisType)
+        test_codes = [t["code"] for t in LAB_TESTS]
+        additional_codes = [t["code"] for t in self.ADDITIONAL_LAB_TESTS]
+        all_codes = test_codes + additional_codes
+        AnalysisType.objects.filter(code__in=all_codes).delete()
+
         User.objects.filter(username__in=demo_usernames).delete()
 
         Patient.objects.filter(passport__in=[p["patient"]["passport"] for p in PATIENTS_DATA]).delete()
 
         dept_names = [d["name"] for d in DEPARTMENTS]
         Department.objects.filter(name__in=dept_names).delete()
-
-        test_codes = [t["code"] for t in LAB_TESTS]
-        AnalysisType.objects.filter(code__in=test_codes).delete()
 
     def _ensure_hospital(self):
         """Ensure at least one Hospital exists."""
@@ -359,9 +365,127 @@ class Command(BaseCommand):
             patients.append(patient)
         return patients
 
+    # ── Standardized field definitions for each lab test ──
+    LAB_TEST_FIELDS = {
+        "CBC": [
+            {"field_key": "hemoglobin", "field_name": "Гемоглобин (Hb)", "field_type": "numeric", "unit": "г/л", "reference_range_min": 120, "reference_range_max": 160, "sort_order": 1},
+            {"field_key": "rbc", "field_name": "Эритроциты (RBC)", "field_type": "numeric", "unit": "×10¹²/л", "reference_range_min": 3.7, "reference_range_max": 4.7, "sort_order": 2},
+            {"field_key": "wbc", "field_name": "Лейкоциты (WBC)", "field_type": "numeric", "unit": "×10⁹/л", "reference_range_min": 4.0, "reference_range_max": 9.0, "sort_order": 3},
+            {"field_key": "platelets", "field_name": "Тромбоциты (PLT)", "field_type": "numeric", "unit": "×10⁹/л", "reference_range_min": 180, "reference_range_max": 320, "sort_order": 4},
+            {"field_key": "hematocrit", "field_name": "Гематокрит (HCT)", "field_type": "numeric", "unit": "%", "reference_range_min": 35, "reference_range_max": 45, "sort_order": 5},
+            {"field_key": "esr", "field_name": "СОЭ (ESR)", "field_type": "numeric", "unit": "мм/ч", "reference_range_min": 2, "reference_range_max": 15, "sort_order": 6},
+        ],
+        "BIO": [
+            {"field_key": "glucose", "field_name": "Глюкоза", "field_type": "numeric", "unit": "ммоль/л", "reference_range_min": 3.3, "reference_range_max": 5.5, "sort_order": 1},
+            {"field_key": "cholesterol", "field_name": "Холестерин общий", "field_type": "numeric", "unit": "ммоль/л", "reference_range_min": 3.5, "reference_range_max": 5.2, "sort_order": 2},
+            {"field_key": "bilirubin_total", "field_name": "Билирубин общий", "field_type": "numeric", "unit": "мкмоль/л", "reference_range_min": 5, "reference_range_max": 21, "sort_order": 3},
+            {"field_key": "alt", "field_name": "АЛТ (ALT)", "field_type": "numeric", "unit": "Ед/л", "reference_range_min": 10, "reference_range_max": 40, "sort_order": 4},
+            {"field_key": "ast", "field_name": "АСТ (AST)", "field_type": "numeric", "unit": "Ед/л", "reference_range_min": 10, "reference_range_max": 40, "sort_order": 5},
+            {"field_key": "creatinine", "field_name": "Креатинин", "field_type": "numeric", "unit": "мкмоль/л", "reference_range_min": 44, "reference_range_max": 106, "sort_order": 6},
+            {"field_key": "urea", "field_name": "Мочевина", "field_type": "numeric", "unit": "ммоль/л", "reference_range_min": 2.5, "reference_range_max": 8.3, "sort_order": 7},
+        ],
+        "URINE": [
+            {"field_key": "color", "field_name": "Цвет", "field_type": "choice", "options": ["Соломенно-жёлтый", "Тёмно-жёлтый", "Красный", "Мутный", "Бесцветный"], "sort_order": 1},
+            {"field_key": "transparency", "field_name": "Прозрачность", "field_type": "choice", "options": ["Полная", "Неполная", "Мутная"], "sort_order": 2},
+            {"field_key": "ph", "field_name": "pH", "field_type": "numeric", "unit": "", "reference_range_min": 5.0, "reference_range_max": 7.0, "sort_order": 3},
+            {"field_key": "protein", "field_name": "Белок", "field_type": "choice", "options": ["Отрицательно", "Следы", "+", "++", "+++", "++++"], "sort_order": 4},
+            {"field_key": "glucose_urine", "field_name": "Глюкоза", "field_type": "choice", "options": ["Отрицательно", "+", "++", "+++"], "sort_order": 5},
+            {"field_key": "leukocytes", "field_name": "Лейкоциты", "field_type": "numeric", "unit": "в п/зр", "reference_range_min": 0, "reference_range_max": 5, "sort_order": 6},
+        ],
+        "ECG": [
+            {"field_key": "rhythm", "field_name": "Ритм", "field_type": "choice", "options": ["Синусовый", "Мерцательная аритмия", "Синусовая тахикардия", "Синусовая брадикардия", "Экстрасистолия"], "sort_order": 1},
+            {"field_key": "heart_rate", "field_name": "ЧСС", "field_type": "numeric", "unit": "уд/мин", "reference_range_min": 60, "reference_range_max": 90, "sort_order": 2},
+            {"field_key": "conclusion", "field_name": "Заключение", "field_type": "text", "is_required": True, "sort_order": 3},
+        ],
+        "COAG": [
+            {"field_key": "pt", "field_name": "Протромбиновое время (PT)", "field_type": "numeric", "unit": "сек", "reference_range_min": 11, "reference_range_max": 15, "sort_order": 1},
+            {"field_key": "inr", "field_name": "МНО (INR)", "field_type": "numeric", "unit": "", "reference_range_min": 0.8, "reference_range_max": 1.2, "sort_order": 2},
+            {"field_key": "aptt", "field_name": "АЧТВ (APTT)", "field_type": "numeric", "unit": "сек", "reference_range_min": 25, "reference_range_max": 35, "sort_order": 3},
+            {"field_key": "fibrinogen", "field_name": "Фибриноген", "field_type": "numeric", "unit": "г/л", "reference_range_min": 2.0, "reference_range_max": 4.0, "sort_order": 4},
+        ],
+    }
+
+    ADDITIONAL_LAB_TESTS = [
+        {
+            "name": "Группа крови и резус-фактор",
+            "code": "BLOOD_GROUP",
+            "price": 25000,
+            "description": "Определение группы крови по системе AB0 и резус-фактора",
+            "fields": [
+                {"field_key": "blood_group", "field_name": "Группа крови", "field_type": "choice", "options": ["O (I) Rh+", "O (I) Rh-", "A (II) Rh+", "A (II) Rh-", "B (III) Rh+", "B (III) Rh-", "AB (IV) Rh+", "AB (IV) Rh-"], "sort_order": 1},
+            ],
+        },
+        {
+            "name": "Тест на COVID-19 (ПЦР)",
+            "code": "COVID_PCR",
+            "price": 80000,
+            "description": "Выявление РНК коронавируса SARS-CoV-2 методом ПЦР",
+            "fields": [
+                {"field_key": "result", "field_name": "Результат", "field_type": "choice", "options": ["Положительный", "Отрицательный"], "sort_order": 1},
+            ],
+        },
+        {
+            "name": "Тест на ВИЧ",
+            "code": "HIV",
+            "price": 30000,
+            "description": "Скрининговое исследование на антитела к ВИЧ 1/2",
+            "fields": [
+                {"field_key": "result", "field_name": "Результат", "field_type": "choice", "options": ["Положительный", "Отрицательный"], "sort_order": 1},
+            ],
+        },
+        {
+            "name": "HBsAg (Гепатит B)",
+            "code": "HEP_B",
+            "price": 25000,
+            "description": "Определение поверхностного антигена вируса гепатита B",
+            "fields": [
+                {"field_key": "result", "field_name": "Результат", "field_type": "choice", "options": ["Положительный", "Отрицательный"], "sort_order": 1},
+            ],
+        },
+        {
+            "name": "Anti-HCV (Гепатит C)",
+            "code": "HEP_C",
+            "price": 30000,
+            "description": "Определение суммарных антител к вирусу гепатита C",
+            "fields": [
+                {"field_key": "result", "field_name": "Результат", "field_type": "choice", "options": ["Положительный", "Отрицательный"], "sort_order": 1},
+            ],
+        },
+        {
+            "name": "Тест на беременность (ХГЧ)",
+            "code": "PREGNANCY",
+            "price": 15000,
+            "description": "Определение хорионического гонадотропина человека в моче",
+            "fields": [
+                {"field_key": "result", "field_name": "Результат", "field_type": "choice", "options": ["Положительный", "Отрицательный"], "sort_order": 1},
+            ],
+        },
+        {
+            "name": "Рентгенография грудной клетки",
+            "code": "XRAY_CHEST",
+            "price": 60000,
+            "description": "Обзорная рентгенография органов грудной клетки",
+            "fields": [
+                {"field_key": "findings", "field_name": "Описание", "field_type": "text", "is_required": True, "sort_order": 1},
+                {"field_key": "conclusion", "field_name": "Заключение", "field_type": "text", "is_required": True, "sort_order": 2},
+            ],
+        },
+        {
+            "name": "УЗИ органов брюшной полости",
+            "code": "US_ABDOMEN",
+            "price": 70000,
+            "description": "Ультразвуковое исследование органов брюшной полости",
+            "fields": [
+                {"field_key": "findings", "field_name": "Описание", "field_type": "text", "is_required": True, "sort_order": 1},
+                {"field_key": "conclusion", "field_name": "Заключение", "field_type": "text", "is_required": True, "sort_order": 2},
+            ],
+        },
+    ]
+
     @transaction.atomic
     def _create_lab_tests(self):
         tests = []
+        # Create original 5 tests with their fields
         for test_data in LAB_TESTS:
             test, was_created = AnalysisType.objects.get_or_create(
                 code=test_data["code"],
@@ -374,5 +498,49 @@ class Command(BaseCommand):
             )
             if was_created:
                 self.stdout.write(f"  Created lab test: {test.name} (code: {test.code}, price: {test.price} UZS)")
+            # Create fields for this test
+            self._create_fields_for_test(test, test_data["code"])
             tests.append(test)
+
+        # Create additional standardized tests
+        for test_data in self.ADDITIONAL_LAB_TESTS:
+            test, was_created = AnalysisType.objects.get_or_create(
+                code=test_data["code"],
+                defaults={
+                    "name": test_data["name"],
+                    "price": test_data["price"],
+                    "description": test_data.get("description", ""),
+                },
+            )
+            if was_created:
+                self.stdout.write(f"  Created lab test: {test.name} (code: {test.code}, price: {test.price} UZS)")
+            # Create fields for this test
+            self._create_fields_for_test(test, test_data["code"], test_data.get("fields"))
+            tests.append(test)
+
         return tests
+
+    def _create_fields_for_test(self, test, code, custom_fields=None):
+        """Create AnalysisField entries for a given test type."""
+        if custom_fields:
+            fields_defs = custom_fields
+        else:
+            fields_defs = self.LAB_TEST_FIELDS.get(code, [])
+
+        for field_def in fields_defs:
+            field, was_created = AnalysisField.objects.get_or_create(
+                analysis_type=test,
+                field_key=field_def["field_key"],
+                defaults={
+                    "field_name": field_def["field_name"],
+                    "field_type": field_def["field_type"],
+                    "options": field_def.get("options"),
+                    "unit": field_def.get("unit", ""),
+                    "reference_range_min": field_def.get("reference_range_min"),
+                    "reference_range_max": field_def.get("reference_range_max"),
+                    "is_required": field_def.get("is_required", True),
+                    "sort_order": field_def.get("sort_order", 0),
+                },
+            )
+            if was_created:
+                self.stdout.write(f"    → Created field: {field.field_name} ({field.get_field_type_display()})")

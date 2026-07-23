@@ -16,7 +16,7 @@ from accounts.permissions import (
 from rest_framework import permissions as drf_permissions
 from patients.models import Patient
 from .models import AnalysisOrder, AnalysisType
-from .serializers import AnalysisOrderSerializer, AnalysisTypeSerializer
+from .serializers import AnalysisOrderSerializer, AnalysisTypeDetailSerializer, AnalysisTypeSerializer
 from .bot_serializers import BotAnalysisResultSerializer
 
 logger = logging.getLogger("lab.bot")
@@ -35,6 +35,8 @@ class AnalysisTypeViewSet(viewsets.ModelViewSet):
 class AnalysisOrderViewSet(viewsets.ModelViewSet):
     queryset = AnalysisOrder.objects.select_related(
         "patient", "orderer", "assigned_to", "analysis_type", "verified_by"
+    ).prefetch_related(
+        "analysis_type__fields"
     ).all()
     serializer_class = AnalysisOrderSerializer
     allowed_roles = {"admin", "doctor", "chief_doctor", "lab_tech", "registrar", "patient"}

@@ -9,14 +9,20 @@ User = get_user_model()
 
 class DepartmentSerializer(serializers.ModelSerializer):
     department_type_display = serializers.CharField(source="get_department_type_display", read_only=True)
+    manager_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Department
         fields = [
             "id", "hospital", "name", "department_type", "department_type_display",
-            "manager", "description", "created_at", "updated_at",
+            "manager", "manager_name", "description", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_manager_name(self, obj):
+        if obj.manager:
+            return obj.manager.full_name_display or obj.manager.get_full_name() or obj.manager.username
+        return None
 
 
 class DepartmentListSerializer(serializers.ModelSerializer):

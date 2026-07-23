@@ -23,13 +23,23 @@ export default function PatientForm() {
   const [success, setSuccess] = useState(null);
 
   useEffect(() => {
-    const newUser = sessionStorage.getItem("newPatientUser");
-    if (newUser) {
-      setForm((prev) => ({
-        ...prev,
-        full_name: `${user?.last_name || ""} ${user?.first_name || ""} ${user?.middle_name || ""}`.trim() || newUser,
-        email: user?.email || "",
-      }));
+    const stored = sessionStorage.getItem("newPatientUser");
+    if (stored) {
+      try {
+        const newUser = JSON.parse(stored);
+        setForm((prev) => ({
+          ...prev,
+          full_name: `${user?.last_name || ""} ${user?.first_name || ""} ${user?.middle_name || ""}`.trim() || newUser.username,
+          email: user?.email || "",
+        }));
+      } catch {
+        // legacy plain string format
+        setForm((prev) => ({
+          ...prev,
+          full_name: `${user?.last_name || ""} ${user?.first_name || ""} ${user?.middle_name || ""}`.trim() || stored,
+          email: user?.email || "",
+        }));
+      }
     }
   }, [user]);
 
@@ -50,16 +60,24 @@ export default function PatientForm() {
     setSaving(true);
     try {
       const payload = { ...form };
-      const newUser = sessionStorage.getItem("newPatientUser");
-      if (newUser) {
+      const stored = sessionStorage.getItem("newPatientUser");
+      if (stored) {
         try {
-          const usersRes = await api.get("/users/");
-          const users = usersRes.data.results || usersRes.data;
-          const matchedUser = users.find((u) => u.username === newUser);
-          if (matchedUser) {
-            payload.user = matchedUser.id;
+          const parsed = JSON.parse(stored);
+          if (parsed.id) {
+            payload.user = parsed.id;
           }
-        } catch {}
+        } catch {
+          // legacy plain string format - fallback to user lookup
+          try {
+            const usersRes = await api.get("/users/");
+            const users = usersRes.data.results || usersRes.data;
+            const matchedUser = users.find((u) => u.username === stored);
+            if (matchedUser) {
+              payload.user = matchedUser.id;
+            }
+          } catch {}
+        }
       }
       if (!payload.user && user?.role === "patient") {
         payload.user = user.id;
@@ -82,7 +100,7 @@ export default function PatientForm() {
         emergency_contact: "",
       });
 
-      if (user?.role === "patient" || newUser) {
+      if (user?.role === "patient" || stored) {
         setTimeout(() => navigate("/"), 1500);
       } else {
         setTimeout(() => navigate("/patients"), 1500);

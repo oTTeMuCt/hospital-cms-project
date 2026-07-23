@@ -25,12 +25,12 @@ export default function Appointments() {
       const [appRes, patRes, docRes, depRes] = await Promise.allSettled([
         api.get("/appointments/"),
         api.get("/patients/"),
-        api.get("/staff/"),
+        api.get("/users/"),
         api.get("/departments/"),
       ]);
       if (appRes.status === "fulfilled") setAppointments(appRes.value.data.results || appRes.value.data);
       if (patRes.status === "fulfilled") setPatients(patRes.value.data.results || patRes.value.data);
-      if (docRes.status === "fulfilled") setDoctors(docRes.value.data.results || docRes.value.data);
+      if (docRes.status === "fulfilled") setDoctors((docRes.value.data.results || docRes.value.data).filter((u) => u.role === "doctor" || u.role === "chief_doctor"));
       if (depRes.status === "fulfilled") setDepartments(depRes.value.data.results || depRes.value.data);
     } catch {
       setError("Ошибка загрузки");
@@ -44,13 +44,22 @@ export default function Appointments() {
   const handleCreate = async (e) => {
     e.preventDefault();
     setSaving(true);
+    setError(null);
     try {
       await api.post("/appointments/", form);
       setShowModal(false);
       setForm({ patient: "", doctor: "", department: "", scheduled_at: "", reason: "" });
       fetchData();
-    } catch {
-      setError("Ошибка создания записи");
+    } catch (err) {
+      const data = err.response?.data;
+      if (data) {
+        const messages = Object.entries(data)
+          .map(([key, val]) => `${key}: ${Array.isArray(val) ? val[0] : val}`)
+          .join("; ");
+        setError(messages);
+      } else {
+        setError("Ошибка создания записи");
+      }
     } finally {
       setSaving(false);
     }
@@ -60,8 +69,16 @@ export default function Appointments() {
     try {
       await api.patch(`/appointments/${id}/`, { status });
       fetchData();
-    } catch {
-      setError("Ошибка обновления статуса");
+    } catch (err) {
+      const data = err.response?.data;
+      if (data) {
+        const messages = Object.entries(data)
+          .map(([key, val]) => `${key}: ${Array.isArray(val) ? val[0] : val}`)
+          .join("; ");
+        setError(messages);
+      } else {
+        setError("Ошибка обновления статуса");
+      }
     }
   };
 
@@ -118,7 +135,7 @@ export default function Appointments() {
               <form onSubmit={handleCreate}>
                 <div className="modal-body">
                   <div className="form-group"><label>Пациент *</label><select className="input" value={form.patient} onChange={(e) => setForm({ ...form, patient: e.target.value })} required><option value="">Выберите пациента</option>{patients.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select></div>
-                  <div className="form-group"><label>Врач</label><select className="input" value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })}><option value="">Выберите врача</option>{doctors.filter(d => d.user).map((d) => <option key={d.id} value={d.user}>{d.user_full_name || d.user_name || d.user?.full_name_display || d.user?.first_name || `#${d.user}`}</option>)}</select></div>
+                  <div className="form-group"><label>Врач</label><select className="input" value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })}><option value="">Выберите врача</option>{doctors.map((d) => <option key={d.id} value={d.id}>{d.last_name} {d.first_name} ({d.username})</option>)}</select></div>
                   <div className="form-group"><label>Отделение</label><select className="input" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })}><option value="">Выберите отделение</option>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
                   <div className="form-group"><label>Дата и время *</label><input className="input" type="datetime-local" value={form.scheduled_at} onChange={(e) => setForm({ ...form, scheduled_at: e.target.value })} required /></div>
                   <div className="form-group"><label>Причина обращения</label><textarea className="input" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} /></div>

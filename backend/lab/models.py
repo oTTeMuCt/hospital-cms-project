@@ -43,6 +43,85 @@ ALLOWED_TRANSITIONS = {
 }
 
 
+class AnalysisField(models.Model):
+    """Predefined structured field for lab test results."""
+    class FieldType(models.TextChoices):
+        CHOICE = "choice", "Выбор из списка"
+        NUMERIC = "numeric", "Числовой"
+        TEXT = "text", "Текст"
+
+    analysis_type = models.ForeignKey(
+        AnalysisType,
+        verbose_name="Вид анализа",
+        on_delete=models.CASCADE,
+        related_name="fields",
+    )
+    field_type = models.CharField(
+        "Тип поля",
+        max_length=16,
+        choices=FieldType.choices,
+    )
+    field_name = models.CharField("Название поля", max_length=255)
+    field_key = models.SlugField("Ключ поля (машинное имя)", max_length=64)
+    options = models.JSONField(
+        "Варианты выбора",
+        null=True, blank=True,
+        help_text='Список вариантов для choice-типа, напр. ["O (I) Rh+", "A (II) Rh-"]',
+    )
+    unit = models.CharField("Единица измерения", max_length=64, blank=True)
+    reference_range_min = models.FloatField("Мин. референс", null=True, blank=True)
+    reference_range_max = models.FloatField("Макс. референс", null=True, blank=True)
+    reference_range_text = models.CharField("Референсные значения (текстом)", max_length=255, blank=True)
+    is_required = models.BooleanField("Обязательное", default=True)
+    sort_order = models.PositiveSmallIntegerField("Порядок сортировки", default=0)
+
+    class Meta:
+        verbose_name = "Поле результата анализа"
+        verbose_name_plural = "Поля результатов анализов"
+        ordering = ["analysis_type", "sort_order"]
+        unique_together = (("analysis_type", "field_key"),)
+
+    def __str__(self):
+        return f"{self.analysis_type.name} — {self.field_name}"
+
+
+class Interpretations(models.TextChoices):
+    NORMAL = "normal", "Норма"
+    HIGH = "high", "Повышен"
+    LOW = "low", "Понижен"
+
+
+class AnalysisResultValue(models.Model):
+    """Stores a single field value for a lab analysis order."""
+    analysis_order = models.ForeignKey(
+        "AnalysisOrder",
+        verbose_name="Заказ анализа",
+        on_delete=models.CASCADE,
+        related_name="result_values",
+    )
+    field = models.ForeignKey(
+        AnalysisField,
+        verbose_name="Поле",
+        on_delete=models.CASCADE,
+        related_name="result_values",
+    )
+    value = models.TextField("Значение", blank=True)
+    interpretation = models.CharField(
+        "Интерпретация",
+        max_length=16,
+        choices=Interpretations.choices,
+        blank=True,
+    )
+
+    class Meta:
+        verbose_name = "Значение результата"
+        verbose_name_plural = "Значения результатов"
+        unique_together = (("analysis_order", "field"),)
+
+    def __str__(self):
+        return f"{self.field.field_name}: {self.value[:50]}"
+
+
 class AnalysisOrder(models.Model):
     patient = models.ForeignKey(
         Patient,
