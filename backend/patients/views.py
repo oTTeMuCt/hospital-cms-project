@@ -1,5 +1,7 @@
 from django.db import transaction
-from rest_framework import viewsets, filters
+from rest_framework import viewsets, filters, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 
 from accounts.permissions import (
@@ -35,6 +37,8 @@ class PatientViewSet(viewsets.ModelViewSet):
             return [IsPatientOwnerOrStaff()]
         if self.action == "destroy":
             return [IsAdminRole()]
+        if self.action == "me":
+            return [drf_permissions.IsAuthenticated()]
         return [IsPatientOwnerOrStaff()]
 
     def get_queryset(self):
@@ -47,3 +51,16 @@ class PatientViewSet(viewsets.ModelViewSet):
         if user.role in ("doctor", "chief_doctor", "lab_tech", "registrar", "admin"):
             return qs
         return qs.none()
+
+    @action(detail=False, methods=["get"])
+    def me(self, request):
+        """Return the patient profile for the currently authenticated user."""
+        try:
+            patient = request.user.patient_profile
+            serializer = self.get_serializer(patient)
+            return Response(serializer.data)
+        except Patient.DoesNotExist:
+            return Response(
+                {"detail": "No patient profile is linked to your account."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
