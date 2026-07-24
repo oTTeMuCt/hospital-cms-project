@@ -40,6 +40,7 @@ export default function Sidebar() {
     ],
     patient: [
       { to: "/", icon: "📊", label: "Мои данные" },
+      { to: "/profile", icon: "👤", label: "Профиль" },
       { to: "/my-analyses", icon: "🔬", label: "Мои анализы" },
     ],
   };

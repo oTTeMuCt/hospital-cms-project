@@ -1,9 +1,11 @@
-"""Load .env and start the Telegram bot."""
+"""
+Bot launcher that reads .env file and sets environment variables correctly.
+"""
 import os
 import sys
 from pathlib import Path
 
-# Load .env from project root
+# Read .env from project root
 env_path = Path(__file__).resolve().parent.parent / ".env"
 if env_path.exists():
     for line in env_path.read_text(encoding="utf-8").splitlines():
@@ -11,9 +13,11 @@ if env_path.exists():
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip())
+        key = key.strip()
+        value = value.strip()
+        os.environ.setdefault(key, value)
 
-# Override API_BASE_URL for local development (Docker uses "backend" hostname)
+# Override API_BASE_URL for local development
 os.environ["API_BASE_URL"] = "http://localhost:8000/api"
 
 # Now import and run the bot

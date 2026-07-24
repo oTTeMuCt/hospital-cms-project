@@ -12,7 +12,8 @@ class PatientSerializer(SensitiveFieldsMixin, serializers.ModelSerializer):
     class Meta:
         model = Patient
         fields = [
-            "id", "user", "full_name", "birth_date", "gender", "gender_display",
+            "id", "user", "full_name", "birth_date",
+            "gender", "gender_display",
             "blood_group", "blood_group_display",
             "pinfl", "passport", "foreign_passport",
             "phone", "email", "telegram_id", "address", "emergency_contact",

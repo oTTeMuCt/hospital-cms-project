@@ -14,6 +14,7 @@ import Analyses from "./pages/Analyses";
 import AuditLog from "./pages/AuditLog";
 import Reports from "./pages/Reports";
 import MyAnalyses from "./pages/MyAnalyses";
+import PatientProfile from "./pages/PatientProfile";
 
 export default function App() {
   return (
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="audit" element={<AuditLog />} />
           <Route path="reports" element={<Reports />} />
           <Route path="my-analyses" element={<MyAnalyses />} />
+          <Route path="profile" element={<PatientProfile />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
