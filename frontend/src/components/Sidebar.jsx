@@ -1,7 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
-export default function Sidebar() {
+export default function Sidebar({ mobileOpen, onClose, isMobile }) {
   const { user, role, roleLabel, logout } = useAuth();
 
   const links = {
@@ -48,7 +48,7 @@ export default function Sidebar() {
   const currentLinks = links[role] || links.patient;
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${mobileOpen ? " open" : ""}`}>
       <div className="sidebar-logo">
         <h1>HCMS</h1>
         <p>Hospital Central Management</p>
@@ -62,6 +62,7 @@ export default function Sidebar() {
               key={link.to}
               to={link.to}
               end={link.to === "/"}
+              onClick={isMobile ? onClose : undefined}
               className={({ isActive }) =>
                 `sidebar-link${isActive ? " active" : ""}`
               }
