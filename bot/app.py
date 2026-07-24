@@ -97,6 +97,26 @@ BACK_KEYBOARD = ReplyKeyboardMarkup(
 # Helpers — API call
 # ---------------------------------------------------------------------------
 
+def _link_telegram(patient_id: str, chat_id: int) -> dict:
+    """Tell backend to store telegram_id on the Patient record."""
+    try:
+        resp = requests.post(
+            f"{API_BASE_URL.rstrip('/')}/bot/link-telegram/",
+            json={"patient_id": patient_id, "telegram_id": str(chat_id)},
+            headers={"X-Bot-Key": BOT_API_KEY, "Content-Type": "application/json"},
+            timeout=REQUEST_TIMEOUT,
+        )
+        resp.encoding = "utf-8"
+        return resp.json()
+    except requests.exceptions.Timeout:
+        return {"error": "Сервер не отвечает."}
+    except requests.exceptions.ConnectionError:
+        return {"error": "Не удалось подключиться к серверу."}
+    except Exception as exc:
+        logger.exception("Error linking telegram for patient %s", patient_id)
+        return {"error": str(exc)}
+
+
 def _fetch_analyses(passport: str) -> dict:
     """Call the backend bot endpoint and return parsed JSON."""
     try:
@@ -249,21 +269,39 @@ async def ask_patient_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         "🔔 <b>Подписка на уведомления</b>\n\n"
         "Введите <b>ID пациента</b>, чтобы получать уведомления "
         "о его анализах, приёмах и изменениях.\n\n"
+        "<i>Примеры: P-000001, 1</i>\n\n"
         "<i>ID можно узнать у вашего врача или в личном кабинете HCMS.</i>"
     )
     context.user_data["awaiting_patient_id"] = True
     await update.message.reply_html(text, reply_markup=BACK_KEYBOARD)
 
 
+def _parse_patient_id(raw: str) -> str | None:
+    """Extract numeric patient ID from formats like 'P-000001' or '1'."""
+    cleaned = raw.strip().upper()
+    # Remove 'P-' or 'P' prefix if present
+    if cleaned.startswith("P-"):
+        cleaned = cleaned[2:]
+    elif cleaned.startswith("P"):
+        cleaned = cleaned[1:]
+    # Remove leading zeros
+    cleaned = cleaned.lstrip("0")
+    if cleaned.isdigit():
+        return cleaned
+    return None
+
+
 async def handle_patient_id_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not context.user_data.get("awaiting_patient_id"):
         return
 
-    patient_id = update.message.text.strip()
+    raw = update.message.text.strip()
+    patient_id = _parse_patient_id(raw)
 
-    if not patient_id.isdigit():
+    if patient_id is None:
         await update.message.reply_html(
-            "⚠️ ID пациента должен состоять из цифр.\n\nПопробуйте ещё раз:",
+            "⚠️ ID пациента должен быть числом или формата <b>P-000001</b>.\n\n"
+            "Попробуйте ещё раз:",
             reply_markup=BACK_KEYBOARD,
         )
         return
@@ -275,6 +313,11 @@ async def handle_patient_id_input(update: Update, context: ContextTypes.DEFAULT_
     context.user_data.pop("awaiting_patient_id", None)
 
     logger.info("Chat %d subscribed to patient %s", chat_id, patient_id)
+
+    # Notify backend to store telegram_id on the Patient record
+    link_result = _link_telegram(raw, chat_id)
+    if link_result.get("error"):
+        logger.warning("Failed to link telegram on backend: %s", link_result["error"])
 
     await update.message.reply_html(
         f"✅ <b>Подписка оформлена!</b>\n\n"
@@ -293,6 +336,16 @@ async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if patient_id:
         _save_subscriptions()
         logger.info("Chat %d unsubscribed from patient %s", chat_id, patient_id)
+        # Clear telegram_id on the backend
+        try:
+            requests.post(
+                f"{API_BASE_URL.rstrip('/')}/bot/link-telegram/",
+                json={"patient_id": patient_id, "telegram_id": ""},
+                headers={"X-Bot-Key": BOT_API_KEY, "Content-Type": "application/json"},
+                timeout=REQUEST_TIMEOUT,
+            )
+        except Exception:
+            pass
         await update.message.reply_html(
             f"🗑️ <b>Подписка отменена</b>\n\n"
             f"Вы больше не получаете уведомления для <b>Пациента #{patient_id}</b>.",

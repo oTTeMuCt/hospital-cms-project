@@ -31,10 +31,14 @@ export default function PatientProfile() {
     fetchPatient();
   }, [user]);
 
+  const TELEGRAM_BOT_LINK = "https://t.me/HospitalCMSbot";
+
+  const formatPatientId = (id) => `P-${String(id).padStart(6, "0")}`;
+
   const copyPatientId = async () => {
     if (!patient) return;
     try {
-      await navigator.clipboard.writeText(String(patient.id));
+      await navigator.clipboard.writeText(formatPatientId(patient.id));
       setToastVisible(true);
       setTimeout(() => setToastVisible(false), 2500);
     } catch {
@@ -104,13 +108,24 @@ export default function PatientProfile() {
             {/* Patient ID Card */}
             <div className="patient-id-card">
               <div className="patient-id-label">Your Patient ID</div>
-              <div className="patient-id-value">{patient.id}</div>
+              <div className="patient-id-value">{formatPatientId(patient.id)}</div>
               <p className="patient-id-hint">
                 Use this Patient ID when connecting to our Telegram Bot.
               </p>
-              <button className="btn btn-primary btn-copy" onClick={copyPatientId}>
-                📋 Copy Patient ID
-              </button>
+              <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+                <button className="btn btn-primary btn-copy" onClick={copyPatientId}>
+                  📋 Copy Patient ID
+                </button>
+                <a
+                  href={TELEGRAM_BOT_LINK}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-outline btn-copy"
+                  style={{ textDecoration: "none" }}
+                >
+                  💬 Open Telegram Bot
+                </a>
+              </div>
             </div>
 
             {/* Two column layout */}
@@ -130,11 +145,10 @@ export default function PatientProfile() {
                     To receive notifications:
                   </p>
                   <ol className="telegram-steps">
-                    <li>Open Telegram.</li>
-                    <li>Search for our Telegram Bot.</li>
+                    <li>Open <a href={TELEGRAM_BOT_LINK} target="_blank" rel="noopener noreferrer">Telegram Bot</a>.</li>
                     <li>Send: <code>/start</code></li>
                     <li>Then send: <code>/connect</code></li>
-                    <li>Enter your Patient ID.</li>
+                    <li>Enter your Patient ID: <strong>{formatPatientId(patient.id)}</strong></li>
                   </ol>
                   <p className="text-muted" style={{ marginTop: 16, fontSize: 13 }}>
                     After linking your account you will receive notifications about:
