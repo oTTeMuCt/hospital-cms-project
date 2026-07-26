@@ -11,6 +11,8 @@ def healthcheck(request):
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("health/", healthcheck, name="healthcheck"),
+    # Prometheus metrics
+    path("", include("django_prometheus.urls")),
     # Auth & users
     path("api/", include("accounts.urls")),
     # Domain modules

@@ -79,7 +79,9 @@ class BotLinkTelegramView(APIView):
     permission_classes = [drf_permissions.AllowAny]
 
     def post(self, request):
-        bot_api_key = os.getenv("BOT_API_KEY", "HCMS-Bot-2024-Secret")
+        bot_api_key = os.getenv("BOT_API_KEY")
+        if not bot_api_key:
+            return Response({"error": "Bot API not configured"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         auth_header = request.META.get("HTTP_X_BOT_KEY", "")
 
         if not auth_header or auth_header != bot_api_key:

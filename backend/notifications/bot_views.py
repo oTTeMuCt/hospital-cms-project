@@ -25,9 +25,10 @@ class BotSubscriptionListCreateView(APIView):
     permission_classes = [AllowAny]
 
     def _verify_bot_key(self, request) -> bool:
-        from django.conf import settings
         import os
-        expected_key = os.getenv("BOT_API_KEY", "HCMS-Bot-2024-Secret")
+        expected_key = os.getenv("BOT_API_KEY")
+        if not expected_key:
+            return False
         bot_key = request.headers.get("X-Bot-Key", "")
         return bot_key == expected_key
 
@@ -93,7 +94,9 @@ class BotSubscriptionDeleteView(APIView):
 
     def _verify_bot_key(self, request) -> bool:
         import os
-        expected_key = os.getenv("BOT_API_KEY", "HCMS-Bot-2024-Secret")
+        expected_key = os.getenv("BOT_API_KEY")
+        if not expected_key:
+            return False
         bot_key = request.headers.get("X-Bot-Key", "")
         return bot_key == expected_key
 
