@@ -43,7 +43,15 @@ export function AuthProvider({ children }) {
     return userData;
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    const refreshToken = localStorage.getItem("refreshToken");
+    try {
+      if (refreshToken) {
+        await api.post("/auth/logout/", { refresh: refreshToken });
+      }
+    } catch {
+      // Token may already be invalid — still clear local state
+    }
     localStorage.removeItem("accessToken");
     localStorage.removeItem("refreshToken");
     localStorage.removeItem("user");

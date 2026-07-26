@@ -1,11 +1,15 @@
 """
 Hospital CMS Telegram Bot — notification subscription & analysis lookup.
-Uses python-telegram-bot v21.x with JSON file persistence.
+Uses python-telegram-bot v21.x with database persistence for subscriptions.
+
+IMPORTANT: This bot uses a singleton lock file to prevent multiple polling instances.
+Do NOT run multiple copies of this bot simultaneously.
 """
 import json
 import logging
 import os
 import sys
+import tempfile
 from pathlib import Path
 from threading import Lock
 
@@ -18,6 +22,65 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+
+# ---------------------------------------------------------------------------
+# Singleton lock — prevents multiple bot instances (Issue 15)
+# ---------------------------------------------------------------------------
+
+_LOCK_FILE = os.path.join(tempfile.gettempdir(), "hospital_cms_bot.lock")
+
+
+def _acquire_singleton_lock() -> bool:
+    """
+    Attempt to acquire a singleton lock file.
+    Returns True if lock was acquired, False if another instance is running.
+    """
+    try:
+        # Use a file-based lock via atomic create
+        if os.path.exists(_LOCK_FILE):
+            # Check if lock is stale (process no longer running)
+            try:
+                with open(_LOCK_FILE, "r") as f:
+                    pid = int(f.read().strip())
+                # Check if process exists on Windows
+                import ctypes
+                kernel32 = ctypes.windll.kernel32
+                handle = kernel32.OpenProcess(0x1000, False, pid)
+                if handle:
+                    kernel32.CloseHandle(handle)
+                    logger.error("Another bot instance is running (PID: %d). Exiting.", pid)
+                    return False
+                else:
+                    # Stale lock — remove it
+                    os.remove(_LOCK_FILE)
+            except (ValueError, OSError, AttributeError):
+                # Can't read or check PID — assume stale
+                try:
+                    os.remove(_LOCK_FILE)
+                except OSError:
+                    pass
+
+        with open(_LOCK_FILE, "w") as f:
+            f.write(str(os.getpid()))
+        logger.info("Bot singleton lock acquired (PID: %d)", os.getpid())
+        return True
+    except Exception as exc:
+        logger.warning("Could not acquire singleton lock: %s", exc)
+        return True  # Allow startup even if lock fails
+
+
+def _release_singleton_lock() -> None:
+    """Release the singleton lock file."""
+    try:
+        if os.path.exists(_LOCK_FILE):
+            with open(_LOCK_FILE, "r") as f:
+                pid = int(f.read().strip())
+                if pid == os.getpid():
+                    os.remove(_LOCK_FILE)
+                    logger.info("Bot singleton lock released.")
+    except Exception:
+        pass
+
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -36,42 +99,87 @@ if not TELEGRAM_BOT_TOKEN:
 
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000/api")
 BOT_API_KEY = os.getenv("BOT_API_KEY", "HCMS-Bot-2024-Secret")
-SUBSCRIPTIONS_FILE = Path(os.getenv("SUBSCRIPTIONS_FILE", "subscriptions.json"))
 
 # Build the full analyses endpoint URL from the API base.
 ANALYSES_URL = f"{API_BASE_URL.rstrip('/')}/bot/patient-analyses/"
+SUBSCRIPTIONS_URL = f"{API_BASE_URL.rstrip('/')}/bot/subscriptions/"
 
 REQUEST_TIMEOUT = 10  # seconds
 
 # ---------------------------------------------------------------------------
-# Subscription store
+# Subscription store — uses backend API for persistence (Issue 16)
 # ---------------------------------------------------------------------------
 
 _subscriptions: dict[int, str] = {}
 _lock = Lock()
 
 
-def _load_subscriptions() -> None:
+def _load_subscriptions_from_api() -> None:
+    """Fetch subscriptions from the backend database instead of JSON file."""
     global _subscriptions
-    if SUBSCRIPTIONS_FILE.exists():
-        try:
-            raw = SUBSCRIPTIONS_FILE.read_text(encoding="utf-8")
-            _subscriptions = {int(k): v for k, v in json.loads(raw).items()}
-            logger.info("Loaded %d subscription(s)", len(_subscriptions))
-        except (json.JSONDecodeError, ValueError, OSError) as exc:
-            logger.warning("Failed to load subscriptions: %s", exc)
-            _subscriptions = {}
-    else:
-        logger.info("No existing subscriptions — starting fresh.")
-
-
-def _save_subscriptions() -> None:
-    with _lock:
-        data = {str(k): v for k, v in _subscriptions.items()}
     try:
-        SUBSCRIPTIONS_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    except OSError as exc:
-        logger.error("Failed to save subscriptions: %s", exc)
+        resp = requests.get(
+            SUBSCRIPTIONS_URL,
+            headers={"X-Bot-Key": BOT_API_KEY},
+            timeout=REQUEST_TIMEOUT,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            with _lock:
+                _subscriptions = {}
+                for sub in data:
+                    chat_id = sub.get("chat_id")
+                    patient_id = sub.get("patient_id_str") or sub.get("patient_id")
+                    if chat_id and patient_id:
+                        _subscriptions[int(chat_id)] = str(patient_id)
+            logger.info("Loaded %d subscription(s) from API", len(_subscriptions))
+        else:
+            logger.warning("Failed to load subscriptions from API (status=%s)", resp.status_code)
+            with _lock:
+                _subscriptions = {}
+    except requests.exceptions.ConnectionError:
+        logger.warning("Cannot connect to backend API — subscriptions will be empty.")
+        with _lock:
+            _subscriptions = {}
+    except Exception as exc:
+        logger.warning("Failed to load subscriptions from API: %s", exc)
+        with _lock:
+            _subscriptions = {}
+
+
+def _save_subscription_to_api(chat_id: int, patient_id: str) -> dict:
+    """Save a subscription to the backend via API."""
+    try:
+        resp = requests.post(
+            SUBSCRIPTIONS_URL,
+            json={"chat_id": chat_id, "patient_id_str": patient_id},
+            headers={"X-Bot-Key": BOT_API_KEY, "Content-Type": "application/json"},
+            timeout=REQUEST_TIMEOUT,
+        )
+        if resp.status_code in (200, 201):
+            return resp.json()
+        logger.warning("Failed to save subscription (status=%s): %s", resp.status_code, resp.text[:200])
+        return {"error": "Failed to save subscription"}
+    except Exception as exc:
+        logger.error("Error saving subscription: %s", exc)
+        return {"error": str(exc)}
+
+
+def _delete_subscription_from_api(chat_id: int) -> dict:
+    """Delete a subscription from the backend via API."""
+    try:
+        resp = requests.delete(
+            f"{SUBSCRIPTIONS_URL.rstrip('/')}{chat_id}/",
+            headers={"X-Bot-Key": BOT_API_KEY},
+            timeout=REQUEST_TIMEOUT,
+        )
+        if resp.status_code in (200, 204):
+            return {"status": "ok"}
+        logger.warning("Failed to delete subscription (status=%s)", resp.status_code)
+        return {"error": "Failed to delete subscription"}
+    except Exception as exc:
+        logger.error("Error deleting subscription: %s", exc)
+        return {"error": str(exc)}
 
 
 # ---------------------------------------------------------------------------
@@ -126,8 +234,6 @@ def _fetch_analyses(passport: str) -> dict:
             headers={"X-Bot-Key": BOT_API_KEY},
             timeout=REQUEST_TIMEOUT,
         )
-        # Force UTF-8 — slim containers lack locale info, so requests
-        # may misdetect the charset and mangle Cyrillic text.
         resp.encoding = "utf-8"
 
         try:
@@ -209,7 +315,6 @@ def _format_analyses(data: dict) -> tuple[str, str]:
 
         lines.append("")
 
-    # Telegram has a 4096 char limit — truncate if needed with a note.
     full_text = "\n".join(lines)
     if len(full_text) > 4000:
         trunc_lines = lines[:50]
@@ -279,12 +384,10 @@ async def ask_patient_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 def _parse_patient_id(raw: str) -> str | None:
     """Extract numeric patient ID from formats like 'P-000001' or '1'."""
     cleaned = raw.strip().upper()
-    # Remove 'P-' or 'P' prefix if present
     if cleaned.startswith("P-"):
         cleaned = cleaned[2:]
     elif cleaned.startswith("P"):
         cleaned = cleaned[1:]
-    # Remove leading zeros
     cleaned = cleaned.lstrip("0")
     if cleaned.isdigit():
         return cleaned
@@ -307,12 +410,21 @@ async def handle_patient_id_input(update: Update, context: ContextTypes.DEFAULT_
         return
 
     chat_id = update.effective_chat.id
+
+    # Save to backend database via API
+    result = _save_subscription_to_api(chat_id, patient_id)
+    if result.get("error"):
+        logger.warning("Failed to save subscription via API: %s", result["error"])
+
     with _lock:
         _subscriptions[chat_id] = patient_id
-    _save_subscriptions()
+
     context.user_data.pop("awaiting_patient_id", None)
 
-    logger.info("Chat %d subscribed to patient %s", chat_id, patient_id)
+    logger.info(
+        "Chat %d subscribed to patient %s (API save: %s)",
+        chat_id, patient_id, "ok" if not result.get("error") else "failed",
+    )
 
     # Notify backend to store telegram_id on the Patient record
     link_result = _link_telegram(raw, chat_id)
@@ -334,7 +446,10 @@ async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         patient_id = _subscriptions.pop(chat_id, None)
 
     if patient_id:
-        _save_subscriptions()
+        # Delete from backend database via API
+        _delete_subscription_from_api(chat_id)
+
+        _save_subscriptions()  # Legacy — keep for backward compat
         logger.info("Chat %d unsubscribed from patient %s", chat_id, patient_id)
         # Clear telegram_id on the backend
         try:
@@ -423,12 +538,10 @@ async def go_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Route text messages that aren't commands."""
-    # Priority: if we're waiting for passport input (analyses lookup).
     if context.user_data.get("awaiting_passport"):
         await handle_passport_input(update, context)
         return
 
-    # Patient ID input for subscription.
     if context.user_data.get("awaiting_patient_id"):
         await handle_patient_id_input(update, context)
         return
@@ -468,29 +581,67 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 # ---------------------------------------------------------------------------
+# Legacy JSON fallback (for backward compatibility during migration)
+# ---------------------------------------------------------------------------
+
+SUBSCRIPTIONS_FILE = Path(os.getenv("SUBSCRIPTIONS_FILE", "subscriptions.json"))
+
+
+def _load_subscriptions() -> None:
+    """Legacy: try API first, fall back to JSON file."""
+    _load_subscriptions_from_api()
+    # If API returned empty and JSON file exists, load from JSON as fallback
+    if not _subscriptions and SUBSCRIPTIONS_FILE.exists():
+        try:
+            raw = SUBSCRIPTIONS_FILE.read_text(encoding="utf-8")
+            data = {int(k): v for k, v in json.loads(raw).items()}
+            with _lock:
+                _subscriptions.update(data)
+            logger.info("Loaded %d subscription(s) from JSON fallback", len(data))
+        except (json.JSONDecodeError, ValueError, OSError) as exc:
+            logger.warning("Failed to load subscriptions from JSON: %s", exc)
+
+
+def _save_subscriptions() -> None:
+    """Legacy save to JSON file (for backward compatibility)."""
+    with _lock:
+        data = {str(k): v for k, v in _subscriptions.items()}
+    try:
+        SUBSCRIPTIONS_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    except OSError as exc:
+        logger.error("Failed to save subscriptions: %s", exc)
+
+
+# ---------------------------------------------------------------------------
 # Bootstrap
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    _load_subscriptions()
+    if not _acquire_singleton_lock():
+        sys.exit(1)
 
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    try:
+        _load_subscriptions()
 
-    # Commands
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("profile", show_profile))
-    app.add_handler(CommandHandler("subscribe", ask_patient_id))
-    app.add_handler(CommandHandler("unsubscribe", unsubscribe))
-    app.add_handler(CommandHandler("help", show_help))
-    app.add_handler(CommandHandler("analyses", ask_passport_for_analyses))
+        app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
-    # Text messages (keyboard buttons + input states)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+        # Commands
+        app.add_handler(CommandHandler("start", cmd_start))
+        app.add_handler(CommandHandler("profile", show_profile))
+        app.add_handler(CommandHandler("subscribe", ask_patient_id))
+        app.add_handler(CommandHandler("unsubscribe", unsubscribe))
+        app.add_handler(CommandHandler("help", show_help))
+        app.add_handler(CommandHandler("analyses", ask_passport_for_analyses))
 
-    app.add_error_handler(error_handler)
+        # Text messages (keyboard buttons + input states)
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    logger.info("Telegram bot starting (polling mode)...")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+        app.add_error_handler(error_handler)
+
+        logger.info("Telegram bot starting (polling mode)...")
+        app.run_polling(allowed_updates=Update.ALL_TYPES)
+    finally:
+        _release_singleton_lock()
 
 
 if __name__ == "__main__":

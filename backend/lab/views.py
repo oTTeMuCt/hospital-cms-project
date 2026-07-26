@@ -64,10 +64,21 @@ class AnalysisOrderViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         user = self.request.user
+        if not user.is_authenticated:
+            return qs.none()
         # Пациенты видят только свои анализы
-        if user.is_authenticated and user.role == "patient":
+        if user.role == "patient":
             return qs.filter(patient__user=user)
-        return qs
+        # Doctors see their ordered analyses
+        if user.role == "doctor":
+            return qs.filter(orderer=user)
+        # Lab techs see assigned analyses
+        if user.role == "lab_tech":
+            return qs.filter(assigned_to=user)
+        # Admin/chief_doctor/registrar see all
+        if user.role in ("admin", "chief_doctor", "registrar"):
+            return qs
+        return qs.none()
 
 
 class BotPatientAnalysesView(APIView):
