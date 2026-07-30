@@ -124,7 +124,10 @@ class BotPatientAnalysesView(APIView):
 
     def get(self, request):
         bot_key = request.headers.get("X-Bot-Key")
-        expected_key = os.getenv("BOT_API_KEY", "HCMS-Bot-2024-Secret")
+        expected_key = os.getenv("BOT_API_KEY")
+        if not expected_key:
+            logger.error("BOT_API_KEY not configured")
+            return Response({"error": "Service configuration error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         # Log incoming request details for diagnostics
         logger.info(

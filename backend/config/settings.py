@@ -8,13 +8,17 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # ---------------------------------------------------------------------------
 # SECURITY: Secret Key & Debug
 # ---------------------------------------------------------------------------
-# SECURITY WARNING: No default fallback for SECRET_KEY in production.
-# Must be set via .env file.
+# SECRET_KEY must be from environment. No fallback in production.
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
-if not SECRET_KEY and os.getenv("DJANGO_DEBUG", "False").lower() not in {"1", "true", "yes", "on"}:
-    raise RuntimeError("DJANGO_SECRET_KEY must be set in production environment.")
 if not SECRET_KEY:
-    SECRET_KEY = "dev-secret-key-insecure-do-not-use-in-production"
+    if os.getenv("DJANGO_DEBUG", "False").lower() in {"1", "true", "yes", "on"}:
+        SECRET_KEY = "dev-secret-key-insecure-do-not-use-in-production"
+    else:
+        raise RuntimeError(
+            "DJANGO_SECRET_KEY environment variable is required in production. "
+            "Generate a 50+ character random key using: "
+            "python -c \"import secrets; print(secrets.token_urlsafe(50))\""
+        )
 
 DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() in {"1", "true", "yes", "on"}
 ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "").split(",") if os.getenv("DJANGO_ALLOWED_HOSTS") else ["localhost", "127.0.0.1"] if DEBUG else []
@@ -22,6 +26,7 @@ if not ALLOWED_HOSTS or ALLOWED_HOSTS == [""]:
     ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+CSRF_TRUSTED_ORIGINS = os.getenv("CSRF_TRUSTED_ORIGINS", FRONTEND_URL).split(",")
 
 # ---------------------------------------------------------------------------
 # Installed Apps
@@ -38,6 +43,7 @@ INSTALLED_APPS = [
     "django_filters",
     "drf_spectacular",
     "corsheaders",
+    "django_prometheus",
     "accounts",
     "hospitals",
     "patients",
@@ -57,6 +63,7 @@ AUTH_USER_MODEL = "accounts.User"
 # Middleware
 # ---------------------------------------------------------------------------
 MIDDLEWARE = [
+    "django_prometheus.middleware.PrometheusBeforeMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -67,6 +74,7 @@ MIDDLEWARE = [
     "audit.middleware.AuditMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "csp.middleware.CSPMiddleware",
+    "django_prometheus.middleware.PrometheusAfterMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -89,26 +97,40 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 # ---------------------------------------------------------------------------
-# Database
+# Database — prefers DATABASE_URL if set
 # ---------------------------------------------------------------------------
-POSTGRES_HOST = os.getenv("POSTGRES_HOST")
-POSTGRES_DB_NAME = os.getenv("POSTGRES_DB", "hospital_cms")
-POSTGRES_USER = os.getenv("POSTGRES_USER", "hospital")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "hospital_pass")
-POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
-
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": POSTGRES_DB_NAME,
-        "USER": POSTGRES_USER,
-        "PASSWORD": POSTGRES_PASSWORD,
-        "HOST": POSTGRES_HOST or "localhost",
-        "PORT": POSTGRES_PORT,
+DATABASE_URL = os.getenv("DATABASE_URL")
+if DATABASE_URL:
+    import re
+    # Parse DATABASE_URL: postgres://user:password@host:port/dbname
+    match = re.match(r"postgres(?:ql)?://(.+?):(.+?)@(.+?)(?::(\d+))?/(.+?)(?:\?.*)?$", DATABASE_URL)
+    if match:
+        DATABASES = {
+            "default": {
+                "ENGINE": "django.db.backends.postgresql",
+                "NAME": match.group(5),
+                "USER": match.group(1),
+                "PASSWORD": match.group(2),
+                "HOST": match.group(3),
+                "PORT": match.group(4) or "5432",
+            }
+        }
+    else:
+        raise RuntimeError(f"Invalid DATABASE_URL format: {DATABASE_URL}")
+else:
+    POSTGRES_HOST = os.getenv("POSTGRES_HOST")
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.getenv("POSTGRES_DB", "hospital_cms"),
+            "USER": os.getenv("POSTGRES_USER", "hospital"),
+            "PASSWORD": os.getenv("POSTGRES_PASSWORD", "hospital_pass"),
+            "HOST": POSTGRES_HOST or "localhost",
+            "PORT": os.getenv("POSTGRES_PORT", "5432"),
+        }
     }
-}
 
-# Fallback to SQLite for local development without PostgreSQL
+# Fallback to SQLite for local development
 if os.getenv("USE_SQLITE", "").lower() in {"1", "true", "yes", "on"}:
     DATABASES["default"] = {
         "ENGINE": "django.db.backends.sqlite3",
@@ -128,9 +150,9 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
-STATIC_ROOT = os.getenv("STATIC_ROOT", BASE_DIR / "staticfiles")
+STATIC_ROOT = os.getenv("STATIC_ROOT", str(BASE_DIR / "staticfiles"))
 MEDIA_URL = "/media/"
-MEDIA_ROOT = os.getenv("MEDIA_ROOT", BASE_DIR / "media")
+MEDIA_ROOT = os.getenv("MEDIA_ROOT", str(BASE_DIR / "media"))
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -165,6 +187,8 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "login": "5/min",
         "login_burst": "10/hour",
+        "anon": "100/hour",
+        "user": "1000/hour",
     },
 }
 
@@ -179,8 +203,8 @@ SPECTACULAR_SETTINGS = {
 # JWT (SimpleJWT) with Token Blacklist
 # ---------------------------------------------------------------------------
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=int(os.getenv("JWT_ACCESS_LIFETIME", "30"))),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=int(os.getenv("JWT_REFRESH_LIFETIME", "1"))),
     "AUTH_HEADER_TYPES": ("Bearer",),
     "BLACKLIST_AFTER_ROTATION": True,
 }
@@ -202,6 +226,7 @@ if not CORS_ALLOWED_ORIGINS and not CORS_ALLOW_ALL_ORIGINS:
 # ---------------------------------------------------------------------------
 SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "").lower() in {"1", "true", "yes", "on"}
 
+# HSTS: only apply when HTTPS is enabled
 HSTS_SECONDS = int(os.getenv("HSTS_SECONDS", "0"))
 if SECURE_SSL_REDIRECT and HSTS_SECONDS > 0:
     SECURE_HSTS_SECONDS = HSTS_SECONDS
@@ -210,6 +235,12 @@ if SECURE_SSL_REDIRECT and HSTS_SECONDS > 0:
 
 SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "").lower() in {"1", "true", "yes", "on"} if not DEBUG else False
 CSRF_COOKIE_SECURE = os.getenv("CSRF_COOKIE_SECURE", "").lower() in {"1", "true", "yes", "on"} if not DEBUG else False
+
+# HttpOnly and SameSite cookies
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
+CSRF_COOKIE_SAMESITE = os.getenv("CSRF_COOKIE_SAMESITE", "Lax")
 
 # Referrer Policy
 SECURE_REFERRER_POLICY = os.getenv("SECURE_REFERRER_POLICY", "same-origin")
@@ -227,12 +258,12 @@ CSP_DEFAULT_SRC = ("'self'",)
 CSP_SCRIPT_SRC = (
     "'self'",
     "'unsafe-inline'",  # Required by Bootstrap JS
-    "https://cdn.jsdelivr.net",  # Bootstrap/Chart.js CDN
+    "https://cdn.jsdelivr.net",
     "https://unpkg.com",
 )
 CSP_STYLE_SRC = (
     "'self'",
-    "'unsafe-inline'",  # Required by Bootstrap
+    "'unsafe-inline'",
     "https://cdn.jsdelivr.net",
     "https://fonts.googleapis.com",
 )
@@ -270,9 +301,12 @@ EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() in {"1", "true", "yes
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@hospitalcms.com")
 
 # ---------------------------------------------------------------------------
-# Cache (required for throttling and lockout)
+# Cache — Redis for production, local mem for dev/test
 # ---------------------------------------------------------------------------
+_is_test = "test" in sys.argv
+_is_dev = os.getenv("USE_SQLITE", "").lower() in {"1", "true", "yes", "on"}
 CACHE_BACKEND = os.getenv("CACHE_BACKEND", "")
+
 if CACHE_BACKEND:
     CACHES = {
         "default": {
@@ -280,7 +314,7 @@ if CACHE_BACKEND:
             "LOCATION": os.getenv("CACHE_LOCATION", ""),
         }
     }
-elif os.getenv("USE_SQLITE", "").lower() in {"1", "true", "yes", "on"} or "test" in sys.argv:
+elif _is_dev or _is_test:
     CACHES = {
         "default": {
             "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
@@ -306,8 +340,8 @@ LOGGING = {
             "format": "{levelname} {asctime} {module} {process:d} {thread:d} {message}",
             "style": "{",
         },
-        "simple": {
-            "format": "{levelname} {message}",
+        "json": {
+            "format": '{{"timestamp":"{asctime}","level":"{levelname}","module":"{module}","message":"{message}"}}',
             "style": "{",
         },
     },
@@ -315,7 +349,7 @@ LOGGING = {
         "console": {
             "level": "DEBUG" if DEBUG else "INFO",
             "class": "logging.StreamHandler",
-            "formatter": "verbose",
+            "formatter": "verbose" if DEBUG else "json",
         },
     },
     "root": {
@@ -331,6 +365,11 @@ LOGGING = {
         "accounts": {
             "handlers": ["console"],
             "level": "INFO",
+            "propagate": False,
+        },
+        "django_prometheus": {
+            "handlers": ["console"],
+            "level": "WARNING",
             "propagate": False,
         },
     },

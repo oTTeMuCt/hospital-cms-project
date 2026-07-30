@@ -99,7 +99,10 @@ if not TELEGRAM_BOT_TOKEN:
     sys.exit(1)
 
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000/api")
-BOT_API_KEY = os.getenv("BOT_API_KEY", "HCMS-Bot-2024-Secret")
+BOT_API_KEY = os.getenv("BOT_API_KEY")
+if not BOT_API_KEY:
+    logger.critical("BOT_API_KEY is not set. Exiting.")
+    sys.exit(1)
 
 # Build the full analyses endpoint URL from the API base.
 ANALYSES_URL = f"{API_BASE_URL.rstrip('/')}/bot/patient-analyses/"
