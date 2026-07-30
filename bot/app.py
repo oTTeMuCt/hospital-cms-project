@@ -12,6 +12,7 @@ import sys
 import tempfile
 from pathlib import Path
 from threading import Lock
+from dotenv import load_dotenv
 
 import requests
 from telegram import ReplyKeyboardMarkup, Update
@@ -26,7 +27,7 @@ from telegram.ext import (
 # ---------------------------------------------------------------------------
 # Singleton lock — prevents multiple bot instances (Issue 15)
 # ---------------------------------------------------------------------------
-
+load_dotenv()
 _LOCK_FILE = os.path.join(tempfile.gettempdir(), "hospital_cms_bot.lock")
 
 
@@ -98,7 +99,10 @@ if not TELEGRAM_BOT_TOKEN:
     sys.exit(1)
 
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000/api")
-BOT_API_KEY = os.getenv("BOT_API_KEY", "HCMS-Bot-2024-Secret")
+BOT_API_KEY = os.getenv("BOT_API_KEY")
+if not BOT_API_KEY:
+    logger.critical("BOT_API_KEY is not set. Exiting.")
+    sys.exit(1)
 
 # Build the full analyses endpoint URL from the API base.
 ANALYSES_URL = f"{API_BASE_URL.rstrip('/')}/bot/patient-analyses/"
@@ -169,7 +173,7 @@ def _delete_subscription_from_api(chat_id: int) -> dict:
     """Delete a subscription from the backend via API."""
     try:
         resp = requests.delete(
-            f"{SUBSCRIPTIONS_URL.rstrip('/')}{chat_id}/",
+            f"{SUBSCRIPTIONS_URL.rstrip('/')}/{chat_id}/",
             headers={"X-Bot-Key": BOT_API_KEY},
             timeout=REQUEST_TIMEOUT,
         )
@@ -449,7 +453,6 @@ async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         # Delete from backend database via API
         _delete_subscription_from_api(chat_id)
 
-        _save_subscriptions()  # Legacy — keep for backward compat
         logger.info("Chat %d unsubscribed from patient %s", chat_id, patient_id)
         # Clear telegram_id on the backend
         try:
@@ -581,35 +584,35 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 # ---------------------------------------------------------------------------
-# Legacy JSON fallback (for backward compatibility during migration)
+# Subscription loading — database-backed only
 # ---------------------------------------------------------------------------
 
 SUBSCRIPTIONS_FILE = Path(os.getenv("SUBSCRIPTIONS_FILE", "subscriptions.json"))
 
 
 def _load_subscriptions() -> None:
-    """Legacy: try API first, fall back to JSON file."""
+    """Load subscriptions from the backend API (database-backed)."""
     _load_subscriptions_from_api()
-    # If API returned empty and JSON file exists, load from JSON as fallback
+    # If API returned empty and legacy JSON file exists, migrate it once
     if not _subscriptions and SUBSCRIPTIONS_FILE.exists():
         try:
             raw = SUBSCRIPTIONS_FILE.read_text(encoding="utf-8")
             data = {int(k): v for k, v in json.loads(raw).items()}
+            # Migrate each legacy subscription to the API
+            for chat_id, patient_id in data.items():
+                _save_subscription_to_api(chat_id, patient_id)
+            # Rename the legacy file so it won't be used again
+            backup_path = SUBSCRIPTIONS_FILE.with_suffix(".json.migrated")
+            SUBSCRIPTIONS_FILE.rename(backup_path)
             with _lock:
                 _subscriptions.update(data)
-            logger.info("Loaded %d subscription(s) from JSON fallback", len(data))
+            logger.info(
+                "Migrated %d subscription(s) from legacy JSON to database. "
+                "Legacy file renamed to %s",
+                len(data), backup_path.name,
+            )
         except (json.JSONDecodeError, ValueError, OSError) as exc:
-            logger.warning("Failed to load subscriptions from JSON: %s", exc)
-
-
-def _save_subscriptions() -> None:
-    """Legacy save to JSON file (for backward compatibility)."""
-    with _lock:
-        data = {str(k): v for k, v in _subscriptions.items()}
-    try:
-        SUBSCRIPTIONS_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    except OSError as exc:
-        logger.error("Failed to save subscriptions: %s", exc)
+            logger.warning("Failed to migrate subscriptions from JSON: %s", exc)
 
 
 # ---------------------------------------------------------------------------

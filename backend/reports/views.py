@@ -1,23 +1,49 @@
 import io
+import logging
 from datetime import datetime
 
 from django.conf import settings
 from django.http import HttpResponse
-from openpyxl import Workbook
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.units import mm
-from reportlab.platypus import (
-    Paragraph,
-    SimpleDocTemplate,
-    Spacer,
-    Table,
-    TableStyle,
-)
 from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
+
+logger = logging.getLogger("reports.views")
+
+# Optional dependencies — gracefully handle missing libraries
+try:
+    from openpyxl import Workbook
+    HAS_OPENPYXL = True
+except ImportError:
+    Workbook = None
+    HAS_OPENPYXL = False
+    logger.warning("openpyxl is not installed. Excel reports will be unavailable.")
+
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
+    )
+    HAS_REPORTLAB = True
+except ImportError:
+    colors = None
+    A4 = None
+    getSampleStyleSheet = None
+    mm = None
+    Paragraph = None
+    SimpleDocTemplate = None
+    Spacer = None
+    Table = None
+    TableStyle = None
+    HAS_REPORTLAB = False
+    logger.warning("reportlab is not installed. PDF reports will be unavailable.")
 
 from accounts.permissions import IsChiefDoctor
 from appointments.models import Appointment
@@ -54,6 +80,12 @@ class PatientsPDFView(APIView):
     permission_classes = [IsChiefDoctor]
 
     def get(self, request):
+        if not HAS_REPORTLAB:
+            return HttpResponse(
+                "PDF generation is unavailable. Install reportlab: pip install reportlab",
+                content_type="text/plain",
+                status=501,
+            )
         buf = io.BytesIO()
         doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=20 * mm, bottomMargin=20 * mm)
         styles = getSampleStyleSheet()
@@ -129,6 +161,12 @@ class PatientsExcelView(APIView):
     permission_classes = [IsChiefDoctor]
 
     def get(self, request):
+        if not HAS_OPENPYXL:
+            return HttpResponse(
+                "Excel generation is unavailable. Install openpyxl: pip install openpyxl",
+                content_type="text/plain",
+                status=501,
+            )
         wb = Workbook()
         ws = wb.active
         ws.title = "Пациенты"
@@ -178,6 +216,12 @@ class AnalysesPDFView(APIView):
     permission_classes = [IsChiefDoctor]
 
     def get(self, request):
+        if not HAS_REPORTLAB:
+            return HttpResponse(
+                "PDF generation is unavailable. Install reportlab: pip install reportlab",
+                content_type="text/plain",
+                status=501,
+            )
         buf = io.BytesIO()
         doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=20 * mm, bottomMargin=20 * mm)
         styles = getSampleStyleSheet()
@@ -250,6 +294,12 @@ class SchedulePDFView(APIView):
     permission_classes = [IsChiefDoctor]
 
     def get(self, request, doctor_id):
+        if not HAS_REPORTLAB:
+            return HttpResponse(
+                "PDF generation is unavailable. Install reportlab: pip install reportlab",
+                content_type="text/plain",
+                status=501,
+            )
         from django.contrib.auth import get_user_model
         User = get_user_model()
 

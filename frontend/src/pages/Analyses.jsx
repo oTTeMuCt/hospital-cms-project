@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import api from "../api";
+import { useAuth } from "../context/AuthContext";
 
 const STATUS_META = {
   created: { label: "Создан", icon: "📝", cls: "badge-warning" },
@@ -17,6 +18,7 @@ const INTERP_LABELS = {
 };
 
 export default function Analyses() {
+  const { user, role } = useAuth();
   const [orders, setOrders] = useState([]);
   const [analysisTypes, setAnalysisTypes] = useState([]);
   const [patients, setPatients] = useState([]);
@@ -31,6 +33,8 @@ export default function Analyses() {
   const [resultValues, setResultValues] = useState({});
   const [resultNotes, setResultNotes] = useState("");
   const [loadingFields, setLoadingFields] = useState(false);
+  const isDoctor = role === "doctor" || role === "chief_doctor" || role === "admin";
+  const isLabTech = role === "lab_tech";
 
   const fetchData = async () => {
     try {
@@ -113,22 +117,26 @@ export default function Analyses() {
       await api.patch(`/analysis-orders/${resultModal}/`, {
         result_values: resultValuesPayload,
         notes: resultNotes,
-        status: "completed",
       });
       setResultModal(null);
       setResultOrder(null);
       fetchData();
     } catch (err) {
-      const data = err.response?.data;
-      if (data) {
-        const messages = Object.entries(data)
-          .map(([key, val]) => `${key}: ${Array.isArray(val) ? val[0] : val}`)
-          .join("; ");
-        setError(messages);
-      } else {
-        setError("Ошибка сохранения результата");
-      }
-    }
+  console.log("=== SAVE RESULT ERROR ===");
+  console.log("Status:", err.response?.status);
+  console.log("Data:", err.response?.data);
+  console.log("Full response:", err.response);
+
+  const data = err.response?.data;
+  if (data) {
+    const messages = Object.entries(data)
+      .map(([key, val]) => `${key}: ${Array.isArray(val) ? val[0] : val}`)
+      .join("; ");
+    setError(messages);
+  } else {
+    setError("Ошибка сохранения результата");
+  }
+}
   };
 
   const renderFieldInput = (field, value) => {
@@ -219,11 +227,32 @@ export default function Analyses() {
 
   return (
     <div>
-      <div className="page-header"><div className="flex-between"><div><h1>Лаборатория</h1><p>Управление анализами и результатами исследований</p></div><button className="btn btn-primary" onClick={() => setShowModal(true)}>+ Назначить анализ</button></div></div>
+      <div className="page-header">
+        <div className="flex-between">
+          <div>
+            <h1>Лаборатория</h1>
+            <p>Управление анализами и результатами исследований</p>
+          </div>
+          {isDoctor && (
+            <button className="btn btn-primary" onClick={() => setShowModal(true)}>+ Назначить анализ</button>
+          )}
+        </div>
+      </div>
       <div className="page-content">
         {error && <div className="alert alert-error">{error}</div>}
         {orders.length === 0 ? (
-          <div className="empty-state"><div className="empty-state-icon">🔬</div><h3>Нет назначенных анализов</h3><p>Назначьте первый анализ пациенту</p><button className="btn btn-primary" onClick={() => setShowModal(true)}>+ Назначить анализ</button></div>
+          <div className="empty-state">
+            <div className="empty-state-icon">🔬</div>
+            <h3>Нет назначенных анализов</h3>
+            {isDoctor ? (
+              <p>Назначьте первый анализ пациенту</p>
+            ) : (
+              <p>Ожидайте поступления новых анализов</p>
+            )}
+            {isDoctor && (
+              <button className="btn btn-primary" onClick={() => setShowModal(true)}>+ Назначить анализ</button>
+            )}
+          </div>
         ) : (
           <div className="table-wrap">
             <table><thead><tr><th>Пациент</th><th>Анализ</th><th>Статус</th><th>Назначен</th><th>Результат</th><th style={{ width: "200px" }}>Действия</th></tr></thead>
@@ -238,11 +267,16 @@ export default function Analyses() {
                     <td className="text-sm" style={{ maxWidth: "250px" }}>{renderResultValues(o)}</td>
                     <td>
                       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                        {o.status === "created" && <button className="btn btn-info btn-sm" onClick={() => updateStatus(o.id, "ordered")}>📋 Назначить</button>}
-                        {o.status === "ordered" && <button className="btn btn-primary btn-sm" onClick={() => updateStatus(o.id, "in_progress")}>🔬 В работу</button>}
-                        {o.status === "in_progress" && <button className="btn btn-success btn-sm" onClick={() => openResultModal(o)}>✅ Результат</button>}
-                        {o.status === "completed" && <button className="btn btn-outline btn-sm" onClick={() => updateStatus(o.id, "verified")}>✔️ Проверить</button>}
-                        {o.status === "verified" && <button className="btn btn-info btn-sm" onClick={() => updateStatus(o.id, "sent")}>📨 Отправить</button>}
+                        {/* Doctor: assign analysis to patient */}
+                        {isDoctor && o.status === "created" && <button className="btn btn-info btn-sm" onClick={() => updateStatus(o.id, "ordered")}>📋 Назначить</button>}
+                        {/* Lab Tech: accept/start working on analysis */}
+                        {isLabTech && o.status === "ordered" && <button className="btn btn-primary btn-sm" onClick={() => updateStatus(o.id, "in_progress")}>🔬 Принять</button>}
+                        {/* Lab Tech: enter results */}
+                        {isLabTech && o.status === "in_progress" && <button className="btn btn-success btn-sm" onClick={() => openResultModal(o)}>✅ Результат</button>}
+                        {/* Doctor: verify completed results */}
+                        {isDoctor && o.status === "completed" && <button className="btn btn-outline btn-sm" onClick={() => updateStatus(o.id, "verified")}>✔️ Проверить</button>}
+                        {/* Doctor: send results to patient */}
+                        {isDoctor && o.status === "verified" && <button className="btn btn-info btn-sm" onClick={() => updateStatus(o.id, "sent")}>📨 Отправить</button>}
                       </div>
                     </td>
                   </tr>

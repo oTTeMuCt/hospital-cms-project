@@ -56,6 +56,8 @@ export function AuthProvider({ children }) {
     localStorage.removeItem("refreshToken");
     localStorage.removeItem("user");
     setUser(null);
+    // Redirect to login page
+    window.location.href = "/login";
   }, []);
 
   const isAuthenticated = !!user;

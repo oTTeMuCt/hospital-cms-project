@@ -77,8 +77,15 @@ export default function Login() {
         </form>
 
         <div className="auth-footer">
-          Нет аккаунта?{" "}
-          <Link to="/register">Зарегистрироваться</Link>
+          <div style={{ marginBottom: "8px" }}>
+            Нет аккаунта?{" "}
+            <Link to="/register">Зарегистрироваться</Link>
+          </div>
+          <div>
+            <Link to="/password-reset" style={{ fontSize: "13px", color: "var(--primary)" }}>
+              Забыли пароль?
+            </Link>
+          </div>
         </div>
       </div>
     </div>
