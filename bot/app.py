@@ -98,17 +98,82 @@ if not TELEGRAM_BOT_TOKEN:
     logger.critical("TELEGRAM_BOT_TOKEN is not set. Exiting.")
     sys.exit(1)
 
-API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000/api")
 BOT_API_KEY = os.getenv("BOT_API_KEY")
 if not BOT_API_KEY:
     logger.critical("BOT_API_KEY is not set. Exiting.")
     sys.exit(1)
 
+REQUEST_TIMEOUT = 10  # seconds
+
+
+def _resolve_api_base_url() -> str:
+    """
+    Determine a working API base URL.
+
+    The .env file typically sets API_BASE_URL=http://backend:8000/api for
+    Docker, where 'backend' is a Docker-network hostname. When the bot runs
+    outside Docker (e.g. locally via `python app.py`), that hostname cannot
+    be resolved and every request fails with NameResolutionError.
+
+    This function tries the configured URL first; if the hostname cannot be
+    resolved, it falls back to http://localhost:8000/api so the bot keeps
+    working in local development without needing the run_bot.py launcher.
+    """
+    from urllib.parse import urlparse
+
+    configured = os.getenv("API_BASE_URL", "http://localhost:8000/api")
+    fallback = "http://localhost:8000/api"
+
+    candidates = [configured]
+    if configured != fallback:
+        candidates.append(fallback)
+
+    for url in candidates:
+        # Build the health-check URL from the origin (scheme + host:port)
+        # because the /health/ endpoint is mounted at the project root,
+        # not under /api/.
+        parsed = urlparse(url)
+        health_url = f"{parsed.scheme}://{parsed.netloc}/health/"
+        try:
+            # Quick connectivity probe — hit the health endpoint.
+            resp = requests.get(
+                health_url,
+                headers={"X-Bot-Key": BOT_API_KEY},
+                timeout=3,
+                allow_redirects=False,
+            )
+            # Any HTTP response (even 404/403) means the host resolved and
+            # the server is reachable — DNS is fine.
+            logger.info("Backend reachable at %s (status=%s)", url, resp.status_code)
+            return url
+        except requests.exceptions.ConnectionError as exc:
+            # NameResolutionError indicates a DNS failure — try next candidate.
+            if "NameResolutionError" in str(exc) or "getaddrinfo" in str(exc):
+                logger.warning(
+                    "Cannot resolve hostname in %s — trying fallback. (%s)",
+                    url, exc,
+                )
+                continue
+            # Other connection errors (refused, timeout) mean DNS worked but
+            # the server isn't up yet — keep the configured URL and let the
+            # normal retry/restart logic handle it.
+            logger.warning("Backend not reachable at %s: %s", url, exc)
+            return url
+        except Exception as exc:
+            logger.warning("Unexpected error probing %s: %s", url, exc)
+            return url
+
+    # All candidates failed DNS resolution — return fallback so the bot can
+    # at least start and retry against localhost.
+    logger.warning("All backend URL candidates failed; using %s", fallback)
+    return fallback
+
+
+API_BASE_URL = _resolve_api_base_url()
+
 # Build the full analyses endpoint URL from the API base.
 ANALYSES_URL = f"{API_BASE_URL.rstrip('/')}/bot/patient-analyses/"
 SUBSCRIPTIONS_URL = f"{API_BASE_URL.rstrip('/')}/bot/subscriptions/"
-
-REQUEST_TIMEOUT = 10  # seconds
 
 # ---------------------------------------------------------------------------
 # Subscription store — uses backend API for persistence (Issue 16)
