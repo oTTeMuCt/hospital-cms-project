@@ -27,6 +27,12 @@ class IsLabTech(permissions.BasePermission):
         return _has_any_role(request, {UserRole.LAB_TECH, UserRole.CHIEF_DOCTOR, UserRole.ADMIN})
 
 
+class IsDoctorOrLabTech(permissions.BasePermission):
+    """Врач, лаборант, главврач или админ."""
+    def has_permission(self, request, view):
+        return _has_any_role(request, {UserRole.DOCTOR, UserRole.LAB_TECH, UserRole.CHIEF_DOCTOR, UserRole.ADMIN})
+
+
 class IsRegistrar(permissions.BasePermission):
     """Регистратор и выше."""
     def has_permission(self, request, view):

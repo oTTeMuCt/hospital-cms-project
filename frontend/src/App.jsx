@@ -15,6 +15,7 @@ import AuditLog from "./pages/AuditLog";
 import Reports from "./pages/Reports";
 import MyAnalyses from "./pages/MyAnalyses";
 import PatientProfile from "./pages/PatientProfile";
+import PasswordChange from "./pages/PasswordChange";
 
 export default function App() {
   return (
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="reports" element={<Reports />} />
           <Route path="my-analyses" element={<MyAnalyses />} />
           <Route path="profile" element={<PatientProfile />} />
+          <Route path="password-change" element={<PasswordChange />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

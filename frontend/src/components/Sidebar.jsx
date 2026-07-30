@@ -81,6 +81,14 @@ export default function Sidebar({ mobileOpen, onClose, isMobile }) {
           </span>
           <span className="sidebar-user-role">{roleLabel}</span>
         </div>
+        <NavLink
+          to="/password-change"
+          className="btn btn-outline btn-sm w-full"
+          style={{ marginBottom: "4px", textDecoration: "none", display: "block", textAlign: "center" }}
+          onClick={isMobile ? onClose : undefined}
+        >
+          🔑 Сменить пароль
+        </NavLink>
         <button className="btn btn-danger btn-sm w-full" onClick={logout}>
           <span>🚪 Выйти</span>
         </button>

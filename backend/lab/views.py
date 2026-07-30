@@ -1,6 +1,7 @@
 import logging
 import os
 
+from django.db.models import Q
 from rest_framework import viewsets, status, filters
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -11,15 +12,20 @@ from accounts.permissions import (
     IsAdminRole,
     IsAuthenticatedAndRole,
     IsDoctor,
+    IsDoctorOrLabTech,
     IsLabTech,
 )
 from rest_framework import permissions as drf_permissions
 from patients.models import Patient
-from .models import AnalysisOrder, AnalysisType
+from .models import AnalysisOrder, AnalysisStatus, AnalysisType
 from .serializers import AnalysisOrderSerializer, AnalysisTypeDetailSerializer, AnalysisTypeSerializer
 from .bot_serializers import BotAnalysisResultSerializer
 
 logger = logging.getLogger("lab.bot")
+debug_logger = logging.getLogger("lab.views")
+debug_logger.setLevel(logging.DEBUG)
+debug_logger.addHandler(logging.StreamHandler())
+debug_logger.propagate = False
 
 
 class AnalysisTypeViewSet(viewsets.ModelViewSet):
@@ -47,13 +53,29 @@ class AnalysisOrderViewSet(viewsets.ModelViewSet):
     ordering = ["-requested_at"]
 
     def get_permissions(self):
+        debug_logger.debug(
+            "=== PERMISSION CHECK === action=%s, user=%s (id=%s), role=%s, authenticated=%s",
+            self.action,
+            getattr(self.request, "user", None),
+            getattr(getattr(self.request, "user", None), "id", None),
+            getattr(getattr(self.request, "user", None), "role", None),
+            getattr(getattr(self.request, "user", None), "is_authenticated", None),
+        )
         if self.action in ("list", "retrieve"):
             # Лаборант, врач, главврач, администратор — могут видеть
-            return [IsAuthenticatedAndRole()]
+            perm = IsAuthenticatedAndRole()
+            result = perm.has_permission(self.request, self)
+            debug_logger.debug("IsAuthenticatedAndRole result: %s", result)
+            return [perm]
         if self.action == "create":
-            return [IsDoctor()]
+            # Только врач может назначить анализ
+            perm = IsDoctor()
+            result = perm.has_permission(self.request, self)
+            debug_logger.debug("IsDoctor result: %s", result)
+            return [perm]
         if self.action in ("update", "partial_update"):
-            return [IsLabTech()]
+            # Врачи могут обновлять статус (назначить/проверить), лаборанты — вводить результаты
+            return [IsDoctorOrLabTech()]
         if self.action == "destroy":
             return [IsAdminRole()]
         return [IsLabTech()]
@@ -72,13 +94,24 @@ class AnalysisOrderViewSet(viewsets.ModelViewSet):
         # Doctors see their ordered analyses
         if user.role == "doctor":
             return qs.filter(orderer=user)
-        # Lab techs see assigned analyses
+        # Lab techs see unassigned analyses (queue) + their own assigned analyses
         if user.role == "lab_tech":
-            return qs.filter(assigned_to=user)
+            return qs.filter(Q(assigned_to__isnull=True) | Q(assigned_to=user))
         # Admin/chief_doctor/registrar see all
         if user.role in ("admin", "chief_doctor", "registrar"):
             return qs
         return qs.none()
+
+    def perform_update(self, serializer):
+        """
+        Delegate workflow state machine to the serializer's update() method.
+        
+        The serializer handles:
+        - Lab Tech auto-assignment when accepting an analysis
+        - Auto-completion when Lab Tech saves results
+        - Status transitions based on current DB state, user role, and data presence
+        """
+        serializer.save()
 
 
 class BotPatientAnalysesView(APIView):

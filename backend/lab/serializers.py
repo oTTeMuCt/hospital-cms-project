@@ -1,3 +1,5 @@
+import logging
+from django.utils import timezone
 from rest_framework import serializers
 
 from .models import (
@@ -9,6 +11,8 @@ from .models import (
     AnalysisType,
     Interpretations,
 )
+
+logger = logging.getLogger("lab.serializer")
 
 
 class AnalysisTypeSerializer(serializers.ModelSerializer):
@@ -73,10 +77,10 @@ class AnalysisTypeDetailSerializer(serializers.ModelSerializer):
 
 class AnalysisResultValueSerializer(serializers.ModelSerializer):
     """Serializer for AnalysisResultValue - used for READ (output) only.
-    
+
     For WRITE operations, the parent AnalysisOrderSerializer handles
-    result_values validation and creation directly via validate_result_values()
-    and update() methods, bypassing this nested serializer.
+    result_values validation and creation directly via update() method,
+    bypassing this nested serializer.
     """
     field_name = serializers.CharField(source="field.field_name", read_only=True)
     field_key = serializers.CharField(source="field.field_key", read_only=True)
@@ -147,16 +151,6 @@ class AnalysisOrderSerializer(serializers.ModelSerializer):
             )
         return value
 
-    def validate(self, attrs):
-        """Extract result_values from raw request data before DRF strips fields."""
-        request = self.context.get("request")
-        if request:
-            raw_data = getattr(request, "data", None)
-            if raw_data and "result_values" in raw_data:
-                # Store raw result_values for the update method to use
-                self._raw_result_values = raw_data["result_values"]
-        return attrs
-
     def to_internal_value(self, data):
         """Intercept to extract result_values before DRF processes nested fields."""
         if "result_values" in data:
@@ -164,26 +158,113 @@ class AnalysisOrderSerializer(serializers.ModelSerializer):
         ret = super().to_internal_value(data)
         return ret
 
-    def validate_result_values(self, values):
-        """This is kept for backward compatibility but bypassed via to_internal_value."""
-        # Values here would be empty because result_values is read_only
-        # Actual validation happens in update() using self._raw_result_values
-        return values
-
     def update(self, instance, validated_data):
-        # Handle result_values from raw request data
-        raw_result_values = getattr(self, "_raw_result_values", None)
+        """
+        Central workflow state machine for AnalysisOrder updates.
 
-        # Update the main order fields (excluding result_values)
+        Workflow decisions are based on:
+        - Current database status (instance.status)
+        - Authenticated user role (from serializer context)
+        - Presence of result_values in raw request data
+
+        State Machine:
+            created → ordered (Doctor assigns to lab)
+            ordered → in_progress (Lab Tech accepts → auto-assigned)
+            in_progress → completed (Lab Tech saves results → auto-completed)
+            completed → verified (Doctor verifies)
+            verified → sent (Doctor sends to patient)
+        """
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        user_role = getattr(user, "role", None) if user else None
+
+        # Extract raw result_values (intercepted by to_internal_value)
+        raw_result_values = getattr(self, "_raw_result_values", None)
+        has_result_values = raw_result_values is not None
+
+        # Extract status from validated_data (if frontend sent it)
+        new_status = validated_data.get("status")
+
+        # Log BEFORE processing
+        logger.info(
+            "=== WORKFLOW UPDATE START ===\n"
+            "  order_id=%s\n"
+            "  current_status=%s\n"
+            "  new_status_from_frontend=%s\n"
+            "  assigned_to_id=%s\n"
+            "  assigned_to_username=%s\n"
+            "  user_role=%s\n"
+            "  user_id=%s\n"
+            "  has_result_values=%s\n"
+            "  validated_data_keys=%s\n"
+            "  raw_result_values_count=%s",
+            instance.id,
+            instance.status,
+            new_status,
+            instance.assigned_to_id,
+            getattr(instance.assigned_to, "username", None) if instance.assigned_to else None,
+            user_role,
+            getattr(user, "id", None),
+            has_result_values,
+            list(validated_data.keys()),
+            len(raw_result_values) if raw_result_values else 0,
+        )
+
+        # ─── WORKFLOW STATE MACHINE ───
+        # Decisions are based on current DB state, user role, and data presence
+        # NOT on what the frontend sends for status
+
+        if user_role == "lab_tech":
+            # ─── LAB TECH WORKFLOW ───
+
+            # 1. ACCEPT: Lab Tech accepting an analysis (status → in_progress)
+            if new_status == AnalysisStatus.IN_PROGRESS and instance.assigned_to is None:
+                validated_data["assigned_to"] = user
+                logger.info("  ACTION: Auto-assign lab tech %s to order %s", user.id, instance.id)
+
+            # 2. COMPLETE: Lab Tech saves results → auto-complete
+            if has_result_values and instance.status == AnalysisStatus.IN_PROGRESS:
+                validated_data["status"] = AnalysisStatus.COMPLETED
+                validated_data["completed_at"] = timezone.now()
+                logger.info(
+                    "  ACTION: Auto-complete order %s (results saved by lab tech %s)",
+                    instance.id, user.id,
+                )
+
+        # ─── DOCTOR / ADMIN WORKFLOW ───
+        # Doctors and admins can explicitly set status transitions
+        # (e.g., created → ordered, completed → verified, verified → sent)
+
+        # ─── APPLY VALIDATED DATA ───
+        # Set all fields from validated_data on the instance
         for attr, value in validated_data.items():
             if attr != "result_values":
                 setattr(instance, attr, value)
 
-        # Handle structured result values from raw input
-        if raw_result_values is not None:
+        # ─── SAVE RESULT VALUES ───
+        if has_result_values:
             self._save_result_values(instance, raw_result_values)
 
+        # ─── PERSIST TO DATABASE ───
         instance.save()
+
+        # Log AFTER processing
+        logger.info(
+            "=== WORKFLOW UPDATE END ===\n"
+            "  order_id=%s\n"
+            "  final_status=%s\n"
+            "  final_assigned_to_id=%s\n"
+            "  final_assigned_to_username=%s\n"
+            "  completed_at=%s\n"
+            "  result_values_saved=%s",
+            instance.id,
+            instance.status,
+            instance.assigned_to_id,
+            getattr(instance.assigned_to, "username", None) if instance.assigned_to else None,
+            instance.completed_at,
+            has_result_values,
+        )
+
         return instance
 
     def _save_result_values(self, instance, result_values_data):

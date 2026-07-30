@@ -20,9 +20,12 @@ export default function PatientProfile() {
         setPatient(res.data);
       } catch (err) {
         if (err.response?.status === 404) {
-          setError("No patient profile is linked to your account. Please contact the clinic administrator or reception.");
+          setError(
+            "Профиль пациента не привязан к вашей учётной записи. " +
+            "Пожалуйста, обратитесь к администратору клиники или в регистратуру."
+          );
         } else {
-          setError("Failed to load patient profile.");
+          setError("Не удалось загрузить профиль пациента. Пожалуйста, попробуйте позже.");
         }
       } finally {
         setLoading(false);
@@ -50,7 +53,7 @@ export default function PatientProfile() {
     return (
       <div className="loading">
         <div className="spinner" />
-        Loading...
+        Загрузка...
       </div>
     );
   }
@@ -58,15 +61,15 @@ export default function PatientProfile() {
   return (
     <div className="patient-profile">
       <div className="page-header">
-        <h1>Patient Profile</h1>
-        <p>Your personal healthcare dashboard</p>
+        <h1>Профиль пациента</h1>
+        <p>Ваш персональный медицинский кабинет</p>
       </div>
 
       <div className="page-content">
         {/* Toast notification */}
         {toastVisible && (
           <div className="toast-notification">
-            <span>✔</span> Patient ID copied successfully
+            <span>✔</span> ID пациента скопирован
           </div>
         )}
 
@@ -74,7 +77,7 @@ export default function PatientProfile() {
           <div className="alert alert-warning">
             <div className="alert-icon">⚠</div>
             <div>
-              <strong>No patient profile found</strong>
+              <strong>Профиль не найден</strong>
               <p style={{ marginTop: 4, fontWeight: 400 }}>{error}</p>
             </div>
           </div>
