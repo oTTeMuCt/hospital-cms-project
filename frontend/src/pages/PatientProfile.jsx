@@ -110,10 +110,10 @@ export default function PatientProfile() {
 
             {/* Patient ID Card */}
             <div className="patient-id-card">
-              <div className="patient-id-label">Your Patient ID</div>
+              <div className="patient-id-label">ID пациента</div>
               <div className="patient-id-value">{formatPatientId(patient.id)}</div>
               <p className="patient-id-hint">
-                Use this Patient ID when connecting to our Telegram Bot.
+                Используйте этот ID для подключения к Telegram-боту.
               </p>
               <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
                 <button className="btn btn-primary btn-copy" onClick={copyPatientId}>
@@ -134,34 +134,34 @@ export default function PatientProfile() {
             {/* Two column layout */}
             <div className="profile-grid-2">
               {/* Telegram Connection Card */}
-              <div className="card">
+                <div className="card">
                 <div className="card-header">
-                  <h3 className="card-title">Connect Telegram</h3>
+                  <h3 className="card-title">Подключение Telegram</h3>
                   {patient.telegram_id ? (
-                    <span className="badge badge-success">Connected</span>
+                    <span className="badge badge-success">Подключено</span>
                   ) : (
-                    <span className="badge badge-danger">Not Connected</span>
+                    <span className="badge badge-danger">Не подключено</span>
                   )}
                 </div>
                 <div className="card-body">
                   <p className="text-muted" style={{ marginBottom: 16 }}>
-                    To receive notifications:
+                    Для получения уведомлений:
                   </p>
                   <ol className="telegram-steps">
-                    <li>Open <a href={TELEGRAM_BOT_LINK} target="_blank" rel="noopener noreferrer">Telegram Bot</a>.</li>
-                    <li>Send: <code>/start</code></li>
-                    <li>Then send: <code>/connect</code></li>
-                    <li>Enter your Patient ID: <strong>{formatPatientId(patient.id)}</strong></li>
+                    <li>Откройте <a href={TELEGRAM_BOT_LINK} target="_blank" rel="noopener noreferrer">Telegram-бота</a>.</li>
+                    <li>Отправьте: <code>/start</code></li>
+                    <li>Затем отправьте: <code>/connect</code></li>
+                    <li>Введите ID пациента: <strong>{formatPatientId(patient.id)}</strong></li>
                   </ol>
                   <p className="text-muted" style={{ marginTop: 16, fontSize: 13 }}>
-                    After linking your account you will receive notifications about:
+                    После подключения вы будете получать уведомления о:
                   </p>
                   <ul className="notification-list">
-                    <li>• Appointment confirmations</li>
-                    <li>• Appointment cancellations</li>
-                    <li>• Laboratory results</li>
-                    <li>• Doctor messages</li>
-                    <li>• Clinic announcements</li>
+                    <li>• Подтверждении записей</li>
+                    <li>• Отмене записей</li>
+                    <li>• Результатах анализов</li>
+                    <li>• Сообщениях врача</li>
+                    <li>• Объявлениях клиники</li>
                   </ul>
                 </div>
               </div>
@@ -169,20 +169,20 @@ export default function PatientProfile() {
               {/* Patient Information Card */}
               <div className="card">
                 <div className="card-header">
-                  <h3 className="card-title">Patient Information</h3>
+                  <h3 className="card-title">Информация о пациенте</h3>
                 </div>
                 <div className="card-body">
                   <table className="info-table">
                     <tbody>
                       <tr>
-                        <td className="info-label">Patient ID</td>
+                        <td className="info-label">ID пациента</td>
                         <td className="info-value">{patient.id}</td>
                       </tr>
                       {patient.birth_date && (
                         <tr>
-                          <td className="info-label">Birth Date</td>
+                          <td className="info-label">Дата рождения</td>
                           <td className="info-value">
-                            {new Date(patient.birth_date).toLocaleDateString("en-US", {
+                            {new Date(patient.birth_date).toLocaleDateString("ru-RU", {
                               year: "numeric",
                               month: "long",
                               day: "numeric",
@@ -192,13 +192,13 @@ export default function PatientProfile() {
                       )}
                       {patient.gender && (
                         <tr>
-                          <td className="info-label">Gender</td>
+                          <td className="info-label">Пол</td>
                           <td className="info-value">{patient.gender_display || patient.gender}</td>
                         </tr>
                       )}
                       {patient.phone && (
                         <tr>
-                          <td className="info-label">Phone</td>
+                          <td className="info-label">Телефон</td>
                           <td className="info-value">{patient.phone}</td>
                         </tr>
                       )}
@@ -209,9 +209,9 @@ export default function PatientProfile() {
                         </tr>
                       )}
                       <tr>
-                        <td className="info-label">Registration Date</td>
+                        <td className="info-label">Дата регистрации</td>
                         <td className="info-value">
-                          {new Date(patient.created_at).toLocaleDateString("en-US", {
+                          {new Date(patient.created_at).toLocaleDateString("ru-RU", {
                             year: "numeric",
                             month: "long",
                             day: "numeric",

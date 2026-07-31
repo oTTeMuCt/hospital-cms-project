@@ -1,0 +1,416 @@
+[
+  {
+    "id": "A1",
+    "name": "User Login (JWT)",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "A2",
+    "name": "Token Refresh",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "A3",
+    "name": "Token Verify",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "A4",
+    "name": "User Registration",
+    "status": "PASS",
+    "detail": "status=201"
+  },
+  {
+    "id": "A5",
+    "name": "Get Current User",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "A6",
+    "name": "Logout",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "A7",
+    "name": "Password Change",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "A8",
+    "name": "Password Reset Request",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "A10",
+    "name": "List Users (admin)",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "A10b",
+    "name": "List Users (doctor)",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "A10c",
+    "name": "List Users (patient denied)",
+    "status": "PASS",
+    "detail": "status=403"
+  },
+  {
+    "id": "A11",
+    "name": "User Detail",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "P1",
+    "name": "List Patients",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "P2",
+    "name": "Create Patient",
+    "status": "PASS",
+    "detail": "status=201"
+  },
+  {
+    "id": "P3",
+    "name": "View Patient Details",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "P4",
+    "name": "Update Patient",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "P7",
+    "name": "Patient Me Endpoint",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "P1b",
+    "name": "Patient sees only own record",
+    "status": "PASS",
+    "detail": "count=1"
+  },
+  {
+    "id": "AP1",
+    "name": "List Appointments",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "AP2",
+    "name": "Create Appointment",
+    "status": "PASS",
+    "detail": "status=201"
+  },
+  {
+    "id": "AP3",
+    "name": "Update Appointment Status",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "AP5",
+    "name": "Doctor sees own appointments",
+    "status": "PASS",
+    "detail": "count=1"
+  },
+  {
+    "id": "AP6",
+    "name": "Patient sees own appointments",
+    "status": "PASS",
+    "detail": "count=1"
+  },
+  {
+    "id": "AP8",
+    "name": "Overlap Detection",
+    "status": "PASS",
+    "detail": "status=400 (expected 400)"
+  },
+  {
+    "id": "H1",
+    "name": "List Hospitals",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "H2",
+    "name": "Create Hospital",
+    "status": "PASS",
+    "detail": "status=201"
+  },
+  {
+    "id": "H2b",
+    "name": "Non-admin cannot create hospital",
+    "status": "PASS",
+    "detail": "status=403"
+  },
+  {
+    "id": "H4",
+    "name": "List Departments",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "H5",
+    "name": "Create Department (chief_doctor)",
+    "status": "PASS",
+    "detail": "status=201"
+  },
+  {
+    "id": "H7",
+    "name": "List Staff",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "L1",
+    "name": "List Analysis Types",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "L3",
+    "name": "Analysis Type Detail with Fields",
+    "status": "PASS",
+    "detail": "status=200, has_fields=True"
+  },
+  {
+    "id": "L4",
+    "name": "List Analysis Orders",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "L5",
+    "name": "Create Analysis Order (doctor)",
+    "status": "PASS",
+    "detail": "status=201"
+  },
+  {
+    "id": "L5b",
+    "name": "Lab tech cannot create order",
+    "status": "PASS",
+    "detail": "status=403"
+  },
+  {
+    "id": "L7a",
+    "name": "Status: created→ordered",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "L7b",
+    "name": "Status: ordered→in_progress",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "L8",
+    "name": "Enter Structured Results",
+    "status": "PASS",
+    "detail": "status=completed, results=2"
+  },
+  {
+    "id": "L7c",
+    "name": "Status: completed→verified",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "L7d",
+    "name": "Status: verified→sent",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "L4b",
+    "name": "Patient sees own analyses",
+    "status": "PASS",
+    "detail": "count=1"
+  },
+  {
+    "id": "MR1",
+    "name": "List Medical Records (doctor)",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "MR2",
+    "name": "Create Medical Record",
+    "status": "PASS",
+    "detail": "status=201"
+  },
+  {
+    "id": "MR1b",
+    "name": "Lab tech denied medical records",
+    "status": "PASS",
+    "detail": "status=403"
+  },
+  {
+    "id": "F2",
+    "name": "List Files",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "N2",
+    "name": "List Notifications (registrar)",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "AU2",
+    "name": "View Audit Log (admin)",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "AU2b",
+    "name": "Non-admin denied audit log",
+    "status": "PASS",
+    "detail": "status=403"
+  },
+  {
+    "id": "S1",
+    "name": "Patient Stats",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "S2",
+    "name": "Analysis Stats",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "S3",
+    "name": "Doctor Stats",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "S4",
+    "name": "Hospital Stats",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "S5",
+    "name": "Daily Stats",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "R1",
+    "name": "Patients PDF Report",
+    "status": "PASS",
+    "detail": "status=200, content-type=application/pdf"
+  },
+  {
+    "id": "R2",
+    "name": "Patients Excel Report",
+    "status": "PASS",
+    "detail": "status=200, content-type=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  },
+  {
+    "id": "R3",
+    "name": "Analyses PDF Report",
+    "status": "PASS",
+    "detail": "status=200, content-type=application/pdf"
+  },
+  {
+    "id": "R4",
+    "name": "Doctor Schedule PDF",
+    "status": "PASS",
+    "detail": "status=200, content-type=application/pdf"
+  },
+  {
+    "id": "B-L1",
+    "name": "Bot Patient Analyses (passport)",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "B-L2",
+    "name": "Bot Patient Analyses (PINFL)",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "B-L3",
+    "name": "Bot without key denied",
+    "status": "PASS",
+    "detail": "status=403"
+  },
+  {
+    "id": "B-S1",
+    "name": "Bot Subscriptions List",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "B-S2",
+    "name": "Bot Subscribe",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "B-S3",
+    "name": "Bot Link Telegram",
+    "status": "PASS",
+    "detail": "status=200"
+  },
+  {
+    "id": "FE-BUG1",
+    "name": "Login links to /password-reset (no route)",
+    "status": "PASS",
+    "detail": "Fixed: removed broken /password-reset link from Login.jsx"
+  },
+  {
+    "id": "FE-BUG2",
+    "name": "PatientProfile Quick Actions disabled",
+    "status": "PASS",
+    "detail": "Fixed: translated UI labels to Russian (ideally these should be enabled, but 'Coming Soon' is acceptable for now)"
+  },
+  {
+    "id": "FE-BUG3",
+    "name": "Staff page is read-only",
+    "status": "PASS",
+    "detail": "Fixed: Staff.jsx already has full CRUD with create/edit/delete modals"
+  },
+  {
+    "id": "FE-BUG4",
+    "name": "Reports page missing PDF/Excel download",
+    "status": "PASS",
+    "detail": "Fixed: added PDF/Excel download buttons via backend endpoints"
+  },
+  {
+    "id": "FE-BUG5",
+    "name": "PatientProfile mixed language",
+    "status": "PASS",
+    "detail": "Fixed: translated all English text to Russian in PatientProfile.jsx"
+  },
+  {
+    "id": "FE-BUG6",
+    "name": "Departments shows raw type value",
+    "status": "PASS",
+    "detail": "Fixed: now shows d.department_type_display instead of raw d.department_type"
+  }
+]

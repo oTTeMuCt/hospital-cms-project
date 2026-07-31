@@ -51,6 +51,19 @@ export default function Reports() {
     finally { setLoadingAnalyses(false); }
   };
 
+  const downloadReport = async (url, filename) => {
+    setLoadingPatients(false); setLoadingAnalyses(false); setMessage(null);
+    try {
+      const res = await api.get(url, { responseType: "blob" });
+      const blob = new Blob([res.data], { type: res.headers["content-type"] });
+      const urlObj = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = urlObj; a.download = filename; a.click();
+      URL.revokeObjectURL(urlObj);
+      setMessage({ type: "success", text: `Отчёт ${filename} скачан` });
+    } catch { setMessage({ type: "error", text: "Ошибка выгрузки отчёта" }); }
+  };
+
   return (
     <div>
       <div className="page-header"><h1>Отчёты</h1><p>Экспорт данных и статистика</p></div>
@@ -60,14 +73,21 @@ export default function Reports() {
           <div className="card card-hover">
             <div className="stat-card-icon" style={{ backgroundColor: "#2563eb15", color: "#2563eb" }}>👤</div>
             <h3 className="card-title" style={{ marginBottom: "12px" }}>Список пациентов</h3>
-            <p className="text-muted text-sm" style={{ marginBottom: "16px" }}>Экспорт всех зарегистрированных пациентов в CSV</p>
-            <button className="btn btn-primary" onClick={exportPatients} disabled={loadingPatients}>{loadingPatients ? "Загрузка..." : "Скачать CSV"}</button>
+            <p className="text-muted text-sm" style={{ marginBottom: "16px" }}>Экспорт в PDF, Excel или CSV</p>
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              <button className="btn btn-primary" onClick={() => downloadReport("/reports/patients/pdf/", `patients_${new Date().toISOString().slice(0,10)}.pdf`)} disabled={loadingPatients}>{loadingPatients ? "Загрузка..." : "PDF"}</button>
+              <button className="btn btn-primary" onClick={() => downloadReport("/reports/patients/excel/", `patients_${new Date().toISOString().slice(0,10)}.xlsx`)} disabled={loadingPatients}>{loadingPatients ? "Загрузка..." : "Excel"}</button>
+              <button className="btn btn-outline" onClick={exportPatients}>{loadingPatients ? "Загрузка..." : "CSV"}</button>
+            </div>
           </div>
           <div className="card card-hover">
             <div className="stat-card-icon" style={{ backgroundColor: "#7c3aed15", color: "#7c3aed" }}>🔬</div>
             <h3 className="card-title" style={{ marginBottom: "12px" }}>Результаты анализов</h3>
-            <p className="text-muted text-sm" style={{ marginBottom: "16px" }}>Экспорт всех назначенных анализов в CSV</p>
-            <button className="btn btn-primary" onClick={exportAnalyses} disabled={loadingAnalyses}>{loadingAnalyses ? "Загрузка..." : "Скачать CSV"}</button>
+            <p className="text-muted text-sm" style={{ marginBottom: "16px" }}>Экспорт в PDF или CSV</p>
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              <button className="btn btn-primary" onClick={() => downloadReport("/reports/analyses/pdf/", `analyses_${new Date().toISOString().slice(0,10)}.pdf`)} disabled={loadingAnalyses}>{loadingAnalyses ? "Загрузка..." : "PDF"}</button>
+              <button className="btn btn-outline" onClick={exportAnalyses}>{loadingAnalyses ? "Загрузка..." : "CSV"}</button>
+            </div>
           </div>
         </div>
       </div>

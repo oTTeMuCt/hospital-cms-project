@@ -82,7 +82,7 @@ export default function Departments() {
               <tr key={d.id}>
                 <td style={{ fontWeight: 600 }}>{d.name}</td>
                 <td>{d.hospital?.name || d.hospital_name || `#${d.hospital}` || "—"}</td>
-                <td><span className="badge badge-info">{d.department_type || "—"}</span></td>
+                <td><span className="badge badge-info">{d.department_type_display || d.department_type || "—"}</span></td>
                 <td className="text-sm">{d.manager_name || d.manager?.full_name_display || d.manager?.username || (d.manager ? `#${d.manager}` : "—")}</td>
                 <td><div style={{ display: "flex", gap: "6px" }}><button className="btn btn-outline btn-sm" onClick={() => openEdit(d)}>✏️</button><button className="btn btn-danger btn-sm" onClick={() => handleDelete(d.id)}>🗑️</button></div></td>
               </tr>

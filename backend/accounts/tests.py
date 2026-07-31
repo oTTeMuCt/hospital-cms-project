@@ -1,10 +1,13 @@
-﻿from django.contrib.auth import get_user_model
+﻿from unittest.mock import patch
+
+from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient, APITestCase
 
 
+@patch("accounts.views.AuthTokenObtainPairView.throttle_classes", [])
 class AccountsModelTests(TestCase):
     def test_create_user_with_role(self):
         User = get_user_model()
@@ -23,6 +26,7 @@ class AccountsModelTests(TestCase):
         self.assertFalse(user.is_staff)
 
 
+@patch("accounts.views.AuthTokenObtainPairView.throttle_classes", [])
 class AccountsAPITests(APITestCase):
     def setUp(self):
         self.client = APIClient()

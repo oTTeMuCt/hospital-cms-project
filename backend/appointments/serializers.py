@@ -40,6 +40,8 @@ class AppointmentSerializer(serializers.ModelSerializer):
         if doctor and scheduled_at:
             if end_time is None:
                 end_time = scheduled_at + timedelta(minutes=30)
+            # Ensure end_time is saved even if not provided
+            data["end_time"] = end_time
 
             if end_time <= scheduled_at:
                 raise serializers.ValidationError({

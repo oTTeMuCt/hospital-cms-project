@@ -81,11 +81,6 @@ export default function Login() {
             Нет аккаунта?{" "}
             <Link to="/register">Зарегистрироваться</Link>
           </div>
-          <div>
-            <Link to="/password-reset" style={{ fontSize: "13px", color: "var(--primary)" }}>
-              Забыли пароль?
-            </Link>
-          </div>
         </div>
       </div>
     </div>

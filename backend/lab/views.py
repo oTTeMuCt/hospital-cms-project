@@ -32,6 +32,11 @@ class AnalysisTypeViewSet(viewsets.ModelViewSet):
     queryset = AnalysisType.objects.all()
     serializer_class = AnalysisTypeSerializer
 
+    def get_serializer_class(self):
+        if self.action == "retrieve":
+            return AnalysisTypeDetailSerializer
+        return AnalysisTypeSerializer
+
     def get_permissions(self):
         if self.action in ("list", "retrieve"):
             return [IsAuthenticated()]
