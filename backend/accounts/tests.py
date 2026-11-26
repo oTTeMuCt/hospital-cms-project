@@ -87,3 +87,14 @@ class AccountsAPITests(APITestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {access_token}")
         response = self.client.get(reverse("user_list"))
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class PublicRegistrationTests(TestCase):
+    def test_registration_only_accepts_patient_role(self):
+        payload = {"username": "new_patient", "password": "test-password"}
+        response = self.client.post("/api/auth/register/", {**payload, "role": "doctor"})
+        self.assertEqual(response.status_code, 400)
+
+        response = self.client.post("/api/auth/register/", payload)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["role"], "patient")

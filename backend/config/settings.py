@@ -224,6 +224,7 @@ if not CORS_ALLOWED_ORIGINS and not CORS_ALLOW_ALL_ORIGINS:
 # ---------------------------------------------------------------------------
 # HTTPS / Security Headers
 # ---------------------------------------------------------------------------
+SECURE_REDIRECT_EXEMPT = [r"^health/$"]
 SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "").lower() in {"1", "true", "yes", "on"}
 
 # HSTS: only apply when HTTPS is enabled
@@ -360,6 +361,11 @@ LOGGING = {
         "django": {
             "handlers": ["console"],
             "level": "INFO" if not DEBUG else "DEBUG",
+            "propagate": False,
+        },
+        "django.db.backends": {
+            "handlers": ["console"],
+            "level": "WARNING",
             "propagate": False,
         },
         "accounts": {

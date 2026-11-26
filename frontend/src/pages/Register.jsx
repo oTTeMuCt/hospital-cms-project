@@ -2,13 +2,6 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import api from "../api";
 
-const ROLE_OPTIONS = [
-  { value: "patient", label: "Пациент" },
-  { value: "doctor", label: "Врач" },
-  { value: "lab_tech", label: "Лаборант" },
-  { value: "registrar", label: "Регистратор" },
-];
-
 export default function Register() {
   const navigate = useNavigate();
   const [form, setForm] = useState({
@@ -19,7 +12,6 @@ export default function Register() {
     first_name: "",
     last_name: "",
     middle_name: "",
-    role: "patient",
   });
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
@@ -56,18 +48,11 @@ export default function Register() {
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
         middle_name: form.middle_name.trim(),
-        role: form.role,
       };
       const regRes = await api.post("/auth/register/", payload);
-      const isPatient = form.role === "patient";
-      if (isPatient) {
-        setSuccess(`Пользователь "${form.username}" успешно создан! Теперь заполните данные пациента.`);
-        sessionStorage.setItem("newPatientUser", JSON.stringify({ id: regRes.data.id, username: form.username }));
-        setTimeout(() => navigate("/patients/new"), 1500);
-      } else {
-        setSuccess(`Пользователь "${form.username}" успешно создан! Перенаправление на страницу входа...`);
-        setTimeout(() => navigate("/login"), 2000);
-      }
+      setSuccess(`Пользователь "${form.username}" успешно создан! Теперь заполните данные пациента.`);
+      sessionStorage.setItem("newPatientUser", JSON.stringify({ id: regRes.data.id, username: form.username }));
+      setTimeout(() => navigate("/patients/new"), 1500);
     } catch (err) {
       const data = err.response?.data;
       if (data) {
@@ -131,16 +116,6 @@ export default function Register() {
                 <label>Повторите пароль *</label>
                 <input className="input" type="password" name="password2" value={form.password2} onChange={handleChange} placeholder="Повторите пароль" required />
               </div>
-            </div>
-
-            <div className="form-group">
-              <label>Роль</label>
-              <select className="input" name="role" value={form.role} onChange={handleChange}>
-                {ROLE_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-              <p className="form-hint">Роль "Администратор" и "Главный врач" назначаются только администратором системы</p>
             </div>
 
             <button type="submit" className="btn btn-primary btn-lg w-full" disabled={submitting} style={{ marginTop: "8px" }}>

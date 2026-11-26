@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 
 import requests
 from telegram import ReplyKeyboardMarkup, Update
+from telegram.error import TelegramError
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -92,6 +93,8 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 logger = logging.getLogger("telegram_bot")
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TELEGRAM_BOT_TOKEN:
@@ -232,9 +235,9 @@ def _link_telegram(patient_id: str, chat_id: int) -> dict:
 def _fetch_analyses(passport: str) -> dict:
     """Call the backend bot endpoint and return parsed JSON."""
     try:
-        resp = requests.get(
+        resp = requests.post(
             ANALYSES_URL,
-            params={"passport": passport},
+            json={"passport": passport},
             headers={"X-Bot-Key": BOT_API_KEY},
             timeout=REQUEST_TIMEOUT,
         )
@@ -244,9 +247,8 @@ def _fetch_analyses(passport: str) -> dict:
             body = resp.json()
         except ValueError:
             logger.error(
-                "Backend returned non-JSON response (status=%s). Body: %s",
+                "Backend returned non-JSON response (status=%s)",
                 resp.status_code,
-                resp.text[:2000],
             )
             return {
                 "status_code": resp.status_code,
@@ -256,13 +258,13 @@ def _fetch_analyses(passport: str) -> dict:
         return {"status_code": resp.status_code, **body}
 
     except requests.exceptions.Timeout:
-        logger.error("Timeout fetching analyses for passport %s", passport)
+        logger.error("Timeout fetching analyses")
         return {"status_code": 0, "error": "Сервер не отвечает. Попробуйте позже."}
     except requests.exceptions.ConnectionError:
-        logger.error("Connection error fetching analyses for passport %s", passport)
+        logger.error("Connection error fetching analyses")
         return {"status_code": 0, "error": "Не удалось подключиться к серверу."}
     except Exception as exc:
-        logger.exception("Unexpected error fetching analyses for passport %s", passport)
+        logger.error("Unexpected error fetching analyses (%s)", type(exc).__name__)
         return {"status_code": 0, "error": "Произошла неизвестная ошибка. Попробуйте позже."}
 
 
@@ -507,7 +509,6 @@ async def handle_passport_input(update: Update, context: ContextTypes.DEFAULT_TY
         chat_id=update.effective_chat.id, action="typing"
     )
 
-    logger.info("Looking up analyses for passport/PINFL: %s", passport)
     data = _fetch_analyses(passport)
     text, parse_mode = _format_analyses(data)
 
@@ -571,7 +572,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logger.error("Exception handling update: %s", context.error, exc_info=True)
+    logger.error("Exception handling update (%s)", type(context.error).__name__)
     if isinstance(update, Update) and update.effective_chat:
         try:
             await context.bot.send_message(
@@ -643,6 +644,9 @@ def main() -> None:
 
         logger.info("Telegram bot starting (polling mode)...")
         app.run_polling(allowed_updates=Update.ALL_TYPES)
+    except TelegramError as exc:
+        logger.error("Telegram polling stopped (%s)", type(exc).__name__)
+        raise SystemExit(1) from None
     finally:
         _release_singleton_lock()
 

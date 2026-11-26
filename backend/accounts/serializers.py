@@ -25,7 +25,7 @@ class UserSerializer(serializers.ModelSerializer):
 
 class UserCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
-    role = serializers.ChoiceField(choices=UserRole.choices, default=UserRole.PATIENT)
+    role = serializers.ChoiceField(choices=[UserRole.PATIENT], default=UserRole.PATIENT)
 
     class Meta:
         model = User
