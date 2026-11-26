@@ -1,9 +1,7 @@
 import logging
-import os
 from collections.abc import Mapping
 
 from django.db.models import Q
-from django.utils.crypto import constant_time_compare
 from rest_framework import viewsets, status, filters
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -18,8 +16,9 @@ from accounts.permissions import (
     IsLabTech,
 )
 from rest_framework import permissions as drf_permissions
-from patients.models import Patient
-from .models import AnalysisOrder, AnalysisStatus, AnalysisType
+from notifications.subscription_models import Subscription
+from patients.telegram import is_bot_request
+from .models import AnalysisOrder, AnalysisStatus, AnalysisType, PUBLISHED_STATUSES
 from .serializers import AnalysisOrderSerializer, AnalysisTypeDetailSerializer, AnalysisTypeSerializer
 from .bot_serializers import BotAnalysisResultSerializer
 
@@ -131,52 +130,36 @@ class BotPatientAnalysesView(APIView):
         return self._lookup(request, request.data)
 
     def _lookup(self, request, identifiers):
-        expected_key = os.getenv("BOT_API_KEY")
-        if not expected_key:
-            logger.error("BOT_API_KEY not configured")
-            return Response({"error": "Service configuration error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        if not constant_time_compare(request.headers.get("X-Bot-Key", ""), expected_key):
-            logger.warning("Bot authentication failed")
+        if not is_bot_request(request):
             return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
-
         if not isinstance(identifiers, Mapping):
-            return Response({"error": "Ожидается объект с идентификаторами"}, status=status.HTTP_400_BAD_REQUEST)
-
-        passport = identifiers.get("passport", "")
-        pinfl = identifiers.get("pinfl", "")
-        if not isinstance(passport, str) or not isinstance(pinfl, str):
-            return Response(
-                {"error": "Ожидаются строковые значения passport и pinfl"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        passport = passport.strip()
-        pinfl = pinfl.strip()
-        if not passport and not pinfl:
-            return Response(
-                {"error": "Укажите passport или pinfl"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"error": "Ожидается объект с данными запроса."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            if passport:
-                patient = Patient.objects.get(passport__iexact=passport)
-            else:
-                patient = Patient.objects.get(pinfl__iexact=pinfl)
-        except Patient.DoesNotExist:
-            return Response({"error": "Пациент не найден"}, status=status.HTTP_404_NOT_FOUND)
-        except Patient.MultipleObjectsReturned:
-            logger.error("Multiple patients match a Telegram lookup")
-            return Response(
-                {"error": "Найдено несколько пациентов. Обратитесь в регистратуру."},
-                status=status.HTTP_409_CONFLICT,
-            )
+            chat_id = int(str(identifiers.get("chat_id", "")))
+            if not 0 < chat_id < 2**63:
+                raise ValueError
+        except ValueError:
+            return Response({"error": "Требуется подтверждённый чат."}, status=status.HTTP_400_BAD_REQUEST)
+
+        subscription = Subscription.objects.select_related("patient").filter(
+            chat_id=chat_id, is_active=True, is_verified=True, patient__isnull=False,
+        ).first()
+        if subscription is None:
+            return Response({"error": "Сначала подключите бота в личном кабинете."}, status=status.HTTP_403_FORBIDDEN)
+
+        patient = subscription.patient
+        for field in ("passport", "pinfl"):
+            if field in identifiers:
+                value = identifiers[field]
+                if not isinstance(value, str) or not value.strip():
+                    return Response({"error": "Некорректный идентификатор."}, status=status.HTTP_400_BAD_REQUEST)
+                if value.strip().casefold() != (getattr(patient, field) or "").casefold():
+                    return Response({"error": "Данные не совпадают с профилем."}, status=status.HTTP_404_NOT_FOUND)
 
         analyses = AnalysisOrder.objects.filter(
-            patient=patient
+            patient=patient, status__in=PUBLISHED_STATUSES,
         ).select_related("analysis_type").order_by("-requested_at")
-
-        serializer = BotAnalysisResultSerializer(analyses, many=True)
         return Response({
             "patient": {
                 "id": patient.id,
@@ -184,5 +167,5 @@ class BotPatientAnalysesView(APIView):
                 "birth_date": str(patient.birth_date) if patient.birth_date else None,
                 "gender": patient.get_gender_display(),
             },
-            "analyses": serializer.data,
+            "analyses": BotAnalysisResultSerializer(analyses, many=True).data,
         })

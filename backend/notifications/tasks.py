@@ -7,7 +7,10 @@ from django.core.mail import send_mail
 from django.db import transaction
 from django.utils import timezone
 
+from patients.models import Patient
+
 from .models import Notification, NotificationChannel, NotificationStatus
+from .subscription_models import Subscription
 
 logger = logging.getLogger(__name__)
 
@@ -72,22 +75,19 @@ def send_telegram(notification) -> None:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is not set")
 
     recipient = notification.recipient
-    telegram_id = None
-
-    # Попытка получить telegram_id из разных полей
-    for attr in ("telegram_id", "telegram_chat_id", "chat_id"):
-        telegram_id = getattr(recipient, attr, None)
-        if telegram_id:
-            break
-
-    if not telegram_id:
-        raise ValueError(f"Recipient {recipient} has no telegram_id")
+    if not isinstance(recipient, Patient):
+        raise ValueError("Telegram notifications require a patient recipient")
+    subscription = Subscription.objects.select_for_update().filter(
+        patient=recipient, is_active=True, is_verified=True,
+    ).first()
+    if subscription is None:
+        raise ValueError("Recipient has no verified Telegram subscription")
 
     text = notification.subject and f"*{notification.subject}*\n{notification.text}" or notification.text
 
     url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
     payload = {
-        "chat_id": telegram_id,
+        "chat_id": subscription.chat_id,
         "text": text,
         "parse_mode": "Markdown",
     }

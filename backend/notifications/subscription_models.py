@@ -42,6 +42,7 @@ class Subscription(models.Model):
         help_text="ID пациента в формате '1' или 'P-000001' (для обратной совместимости)",
     )
     is_active = models.BooleanField("Активна", default=True)
+    is_verified = models.BooleanField("Подтверждена", default=False)
     created_at = models.DateTimeField("Дата создания", auto_now_add=True)
     updated_at = models.DateTimeField("Дата обновления", auto_now=True)
 
@@ -49,6 +50,13 @@ class Subscription(models.Model):
         verbose_name = "Подписка Telegram"
         verbose_name_plural = "Подписки Telegram"
         ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["patient"],
+                condition=models.Q(is_active=True, is_verified=True),
+                name="unique_verified_telegram_per_patient",
+            ),
+        ]
         indexes = [
             models.Index(fields=["chat_id"]),
             models.Index(fields=["is_active"]),

@@ -12,7 +12,7 @@ from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 from accounts.models import UserRole
 from accounts.permissions import IsDoctor, IsDoctorOrLabTech
 from patients.models import Patient
-from lab.models import AnalysisType, AnalysisOrder, AnalysisStatus
+from lab.models import AnalysisField, AnalysisType, AnalysisOrder, AnalysisStatus
 from lab.views import AnalysisOrderViewSet
 from lab.serializers import AnalysisOrderSerializer
 
@@ -495,16 +495,67 @@ class LabWorkflowTests(TestCase):
 
 class BotAnalysisLookupTests(TestCase):
     @patch.dict("os.environ", {"BOT_API_KEY": "test-key"})
-    def test_post_lookup_preserves_legacy_response(self):
-        patient = Patient.objects.create(full_name="Test patient", passport="TEST00001")
-        client = APIClient()
+    def test_confirmed_chat_can_find_published_results_by_pinfl(self):
+        from notifications.subscription_models import Subscription
+
+        patient = Patient.objects.create(full_name="Test patient", pinfl="12345678901234")
+        Subscription.objects.create(chat_id=1234, patient=patient, is_verified=True)
+        kind = AnalysisType.objects.create(name="Test analysis", code="PUBLISHED")
+        for stage in (AnalysisStatus.VERIFIED, AnalysisStatus.SENT):
+            AnalysisOrder.objects.create(patient=patient, analysis_type=kind, status=stage)
         headers = {"HTTP_X_BOT_KEY": "test-key"}
-        identifiers = {"passport": patient.passport}
-
-        with self.assertNoLogs("lab.bot", level="INFO"):
-            response = client.post("/api/bot/patient-analyses/", identifiers, format="json", **headers)
-            legacy = client.get("/api/bot/patient-analyses/", identifiers, **headers)
-
+        client = APIClient()
+        response = client.post(
+            "/api/bot/patient-analyses/", {"chat_id": 1234, "pinfl": patient.pinfl},
+            format="json", **headers,
+        )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(legacy.json(), response.json())
-        self.assertEqual(response.json()["patient"]["id"], patient.pk)
+        self.assertEqual([row["status"] for row in response.json()["analyses"]], [AnalysisStatus.SENT])
+
+
+class LabResultIntegrityTests(TestCase):
+    def setUp(self):
+        users = get_user_model().objects
+        self.lab_tech = users.create(username="technician", role="lab_tech")
+        self.patient_user = users.create(username="patient", role="patient")
+        kind = AnalysisType.objects.create(name="Test analysis", code="REQUIRED")
+        for key in ("first", "second"):
+            AnalysisField.objects.create(
+                analysis_type=kind, field_type="text", field_name=key, field_key=key, is_required=True,
+            )
+        self.order = AnalysisOrder.objects.create(
+            patient=self.patient_user.patient_profile, analysis_type=kind,
+            assigned_to=self.lab_tech, status=AnalysisStatus.IN_PROGRESS, notes="Internal notes",
+        )
+        self.url = f"/api/analysis-orders/{self.order.pk}/"
+        self.client = APIClient()
+        self.client.force_authenticate(self.lab_tech)
+
+    def test_partial_completion_waits_for_all_required_fields(self):
+        for key, expected in (("first", AnalysisStatus.IN_PROGRESS), ("second", AnalysisStatus.COMPLETED)):
+            result = self.client.patch(
+                self.url, {"result_values": [{"field_key": key, "value": "Норма"}]}, format="json",
+            )
+            self.assertEqual(result.status_code, 200, result.data)
+            self.order.refresh_from_db()
+            self.assertEqual(self.order.status, expected)
+
+    def test_invalid_save_does_not_write_any_results(self):
+        result = self.client.patch(self.url, {"result_values": [
+            {"field_key": "first", "value": "Норма"}, {"field_key": "second", "value": ""},
+        ]}, format="json")
+        self.assertEqual(result.status_code, 400)
+        self.assertFalse(self.order.result_values.exists())
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, AnalysisStatus.IN_PROGRESS)
+
+    def test_patient_sees_results_only_after_publication(self):
+        self.order.result = "Published value"
+        self.client.force_authenticate(self.patient_user)
+        for stage, expected_result in ((AnalysisStatus.VERIFIED, ""), (AnalysisStatus.SENT, self.order.result)):
+            self.order.status = stage
+            self.order.save()
+            response = self.client.get(self.url)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data["result"], expected_result)
+            self.assertEqual(response.data["notes"], "")

@@ -1,4 +1,8 @@
-import logging
+from collections.abc import Mapping
+from math import isfinite
+
+from django.db import transaction
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -10,9 +14,8 @@ from .models import (
     AnalysisStatus,
     AnalysisType,
     Interpretations,
+    PUBLISHED_STATUSES,
 )
-
-logger = logging.getLogger("lab.serializer")
 
 
 class AnalysisTypeSerializer(serializers.ModelSerializer):
@@ -134,137 +137,63 @@ class AnalysisOrderSerializer(serializers.ModelSerializer):
             "verified_by",
             "notes",
         ]
-        read_only_fields = ["id", "requested_at"]
-
-    def validate_status(self, value):
-        instance = getattr(self, "instance", None)
-        if instance is None:
-            return value
-        old_status = instance.status
-        if old_status == value:
-            return value
-        allowed = ALLOWED_TRANSITIONS.get(old_status, set())
-        if value not in allowed:
-            raise serializers.ValidationError(
-                f"Недопустимый переход: из «{instance.get_status_display()}» "
-                f"в «{dict(AnalysisStatus.choices).get(value, value)}»."
-            )
-        return value
+        read_only_fields = ["id", "requested_at", "orderer", "completed_at", "verified_by"]
 
     def to_internal_value(self, data):
-        """Intercept to extract result_values before DRF processes nested fields."""
         if "result_values" in data:
-            self._raw_result_values = data.pop("result_values")
-        ret = super().to_internal_value(data)
-        return ret
+            data = data.copy()
+            self._raw_result_values = data["result_values"]
+            del data["result_values"]
+            if not isinstance(self._raw_result_values, list):
+                raise serializers.ValidationError({"result_values": "Ожидается список результатов."})
+        return super().to_internal_value(data)
 
+    @transaction.atomic
     def update(self, instance, validated_data):
-        """
-        Central workflow state machine for AnalysisOrder updates.
+        instance = get_object_or_404(AnalysisOrder.objects.select_for_update(), pk=instance.pk)
+        user = getattr(self.context.get("request"), "user", None)
+        role = getattr(user, "role", None)
+        old_status = instance.status
+        new_status = validated_data.get("status", old_status)
+        raw_results = getattr(self, "_raw_result_values", None)
 
-        Workflow decisions are based on:
-        - Current database status (instance.status)
-        - Authenticated user role (from serializer context)
-        - Presence of result_values in raw request data
-
-        State Machine:
-            created → ordered (Doctor assigns to lab)
-            ordered → in_progress (Lab Tech accepts → auto-assigned)
-            in_progress → completed (Lab Tech saves results → auto-completed)
-            completed → verified (Doctor verifies)
-            verified → sent (Doctor sends to patient)
-        """
-        request = self.context.get("request")
-        user = getattr(request, "user", None)
-        user_role = getattr(user, "role", None) if user else None
-
-        # Extract raw result_values (intercepted by to_internal_value)
-        raw_result_values = getattr(self, "_raw_result_values", None)
-        has_result_values = raw_result_values is not None
-
-        # Extract status from validated_data (if frontend sent it)
-        new_status = validated_data.get("status")
-
-        # Log BEFORE processing
-        logger.info(
-            "=== WORKFLOW UPDATE START ===\n"
-            "  order_id=%s\n"
-            "  current_status=%s\n"
-            "  new_status_from_frontend=%s\n"
-            "  assigned_to_id=%s\n"
-            "  assigned_to_username=%s\n"
-            "  user_role=%s\n"
-            "  user_id=%s\n"
-            "  has_result_values=%s\n"
-            "  validated_data_keys=%s\n"
-            "  raw_result_values_count=%s",
-            instance.id,
-            instance.status,
-            new_status,
-            instance.assigned_to_id,
-            getattr(instance.assigned_to, "username", None) if instance.assigned_to else None,
-            user_role,
-            getattr(user, "id", None),
-            has_result_values,
-            list(validated_data.keys()),
-            len(raw_result_values) if raw_result_values else 0,
-        )
-
-        # ─── WORKFLOW STATE MACHINE ───
-        # Decisions are based on current DB state, user role, and data presence
-        # NOT on what the frontend sends for status
-
-        if user_role == "lab_tech":
-            # ─── LAB TECH WORKFLOW ───
-
-            # 1. ACCEPT: Lab Tech accepting an analysis (status → in_progress)
-            if new_status == AnalysisStatus.IN_PROGRESS and instance.assigned_to is None:
+        if new_status != old_status and new_status not in ALLOWED_TRANSITIONS.get(old_status, ()):
+            raise serializers.ValidationError({"status": "Недопустимый переход статуса анализа."})
+        if role == "lab_tech":
+            if instance.assigned_to_id not in (None, user.pk):
+                raise serializers.ValidationError({"assigned_to": "Анализ назначен другому лаборанту."})
+            if set(validated_data) - {"status", "notes", "result"}:
+                raise serializers.ValidationError("Лаборанту доступны только статус, результат и примечания.")
+            if new_status != old_status and new_status not in {AnalysisStatus.IN_PROGRESS, AnalysisStatus.COMPLETED}:
+                raise serializers.ValidationError({"status": "Этот переход выполняет врач."})
+            if new_status == AnalysisStatus.IN_PROGRESS and instance.assigned_to_id is None:
                 validated_data["assigned_to"] = user
-                logger.info("  ACTION: Auto-assign lab tech %s to order %s", user.id, instance.id)
+        if old_status != AnalysisStatus.CREATED and {"patient", "analysis_type"}.intersection(validated_data):
+            raise serializers.ValidationError("Пациента и вид анализа можно изменить только до назначения.")
+        if raw_results is not None and old_status != AnalysisStatus.IN_PROGRESS:
+            raise serializers.ValidationError({"result_values": "Ввод результатов доступен для анализа в работе."})
 
-            # 2. COMPLETE: Lab Tech saves results → auto-complete
-            if has_result_values and instance.status == AnalysisStatus.IN_PROGRESS:
-                validated_data["status"] = AnalysisStatus.COMPLETED
-                validated_data["completed_at"] = timezone.now()
-                logger.info(
-                    "  ACTION: Auto-complete order %s (results saved by lab tech %s)",
-                    instance.id, user.id,
-                )
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+        if raw_results is not None:
+            self._save_result_values(instance, raw_results)
 
-        # ─── DOCTOR / ADMIN WORKFLOW ───
-        # Doctors and admins can explicitly set status transitions
-        # (e.g., created → ordered, completed → verified, verified → sent)
-
-        # ─── APPLY VALIDATED DATA ───
-        # Set all fields from validated_data on the instance
-        for attr, value in validated_data.items():
-            if attr != "result_values":
-                setattr(instance, attr, value)
-
-        # ─── SAVE RESULT VALUES ───
-        if has_result_values:
-            self._save_result_values(instance, raw_result_values)
-
-        # ─── PERSIST TO DATABASE ───
-        instance.save()
-
-        # Log AFTER processing
-        logger.info(
-            "=== WORKFLOW UPDATE END ===\n"
-            "  order_id=%s\n"
-            "  final_status=%s\n"
-            "  final_assigned_to_id=%s\n"
-            "  final_assigned_to_username=%s\n"
-            "  completed_at=%s\n"
-            "  result_values_saved=%s",
-            instance.id,
-            instance.status,
-            instance.assigned_to_id,
-            getattr(instance.assigned_to, "username", None) if instance.assigned_to else None,
-            instance.completed_at,
-            has_result_values,
+        completed = new_status in (AnalysisStatus.COMPLETED, AnalysisStatus.VERIFIED, AnalysisStatus.SENT)
+        auto_complete = role == "lab_tech" and old_status == AnalysisStatus.IN_PROGRESS and (
+            bool(raw_results) or bool(validated_data.get("result"))
         )
-
+        if completed or auto_complete:
+            filled = instance.result_values.exclude(value="").values("field_id")
+            missing = instance.analysis_type.fields.filter(is_required=True).exclude(pk__in=filled)
+            if completed and missing.exists():
+                raise serializers.ValidationError({"result_values": "Заполните все обязательные поля анализа."})
+            if auto_complete and not missing.exists():
+                instance.status = AnalysisStatus.COMPLETED
+            if old_status == AnalysisStatus.IN_PROGRESS and instance.status == AnalysisStatus.COMPLETED:
+                instance.completed_at = timezone.now()
+        if old_status != AnalysisStatus.VERIFIED and instance.status == AnalysisStatus.VERIFIED:
+            instance.verified_by = user
+        instance.save()
         return instance
 
     def _save_result_values(self, instance, result_values_data):
@@ -274,9 +203,15 @@ class AnalysisOrderSerializer(serializers.ModelSerializer):
 
         prev_values = {rv.field.field_key: rv for rv in instance.result_values.all()}
 
+        seen = set()
         for item in result_values_data:
-            field_key = item.get("field_key", "")
-            value = item.get("value", "").strip()
+            if not isinstance(item, Mapping) or not isinstance(item.get("field_key"), str) or not isinstance(item.get("value"), str):
+                raise serializers.ValidationError({"result_values": "Ожидаются ключ поля и строковое значение."})
+            field_key = item["field_key"]
+            value = item["value"].strip()
+            if field_key in seen:
+                raise serializers.ValidationError({"result_values": "Поле результата указано дважды."})
+            seen.add(field_key)
 
             if not field_key:
                 raise serializers.ValidationError({
@@ -308,7 +243,8 @@ class AnalysisOrderSerializer(serializers.ModelSerializer):
                 # Validate numeric fields
                 if field_obj.field_type == "numeric":
                     try:
-                        float(value.replace(",", "."))
+                        if not isfinite(float(value.replace(",", "."))):
+                            raise ValueError
                     except (ValueError, TypeError):
                         raise serializers.ValidationError(
                             f"Поле '{field_obj.field_name}' должно содержать числовое значение."
@@ -363,15 +299,14 @@ class AnalysisOrderSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data.pop("result_values", None)
+        validated_data["status"] = AnalysisStatus.CREATED
         return super().create(validated_data)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        # Ensure structured result_values are included in the response
-        if not data.get("result_values"):
-            values = AnalysisResultValueSerializer(
-                instance.result_values.select_related("field").all(),
-                many=True,
-            ).data
-            data["result_values"] = values
+        user = getattr(self.context.get("request"), "user", None)
+        if getattr(user, "role", None) == "patient":
+            data["notes"] = ""
+            if instance.status not in PUBLISHED_STATUSES:
+                data.update(result="", result_data=None, result_values=[])
         return data

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import api from "../api";
+import api, { getErrorMessage } from "../api";
 
 const STATUS_LABELS = {
   pending: { label: "Ожидает", cls: "badge-warning" },
@@ -14,6 +14,7 @@ export default function Appointments() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [bookingError, setBookingError] = useState(null);
   const [form, setForm] = useState({ patient: "", doctor: "", department: "", scheduled_at: "", reason: "" });
   const [patients, setPatients] = useState([]);
   const [doctors, setDoctors] = useState([]);
@@ -44,7 +45,7 @@ export default function Appointments() {
   const handleCreate = async (e) => {
     e.preventDefault();
     setSaving(true);
-    setError(null);
+    setBookingError(null);
     try {
       await api.post("/appointments/", form);
       setShowModal(false);
@@ -52,14 +53,7 @@ export default function Appointments() {
       fetchData();
     } catch (err) {
       const data = err.response?.data;
-      if (data) {
-        const messages = Object.entries(data)
-          .map(([key, val]) => `${key}: ${Array.isArray(val) ? val[0] : val}`)
-          .join("; ");
-        setError(messages);
-      } else {
-        setError("Ошибка создания записи");
-      }
+      setBookingError(Array.isArray(data) ? data.join(" ") : getErrorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -89,7 +83,7 @@ export default function Appointments() {
       <div className="page-header">
         <div className="flex-between">
           <div><h1>Записи на приём</h1><p>Управление расписанием и записями пациентов</p></div>
-          <button className="btn btn-primary" onClick={() => setShowModal(true)}>+ Новая запись</button>
+          <button className="btn btn-primary" onClick={() => { setBookingError(null); setShowModal(true); }}>+ Новая запись</button>
         </div>
       </div>
       <div className="page-content">
@@ -98,7 +92,7 @@ export default function Appointments() {
           <div className="empty-state">
             <div className="empty-state-icon">📅</div>
             <h3>Нет записей</h3><p>Создайте первую запись на приём</p>
-            <button className="btn btn-primary" onClick={() => setShowModal(true)}>+ Новая запись</button>
+            <button className="btn btn-primary" onClick={() => { setBookingError(null); setShowModal(true); }}>+ Новая запись</button>
           </div>
         ) : (
           <div className="table-wrap">
@@ -134,6 +128,7 @@ export default function Appointments() {
               <div className="modal-header"><h2>Новая запись на приём</h2><button className="close-btn" onClick={() => setShowModal(false)}>×</button></div>
               <form onSubmit={handleCreate}>
                 <div className="modal-body">
+                  {bookingError && <div className="alert alert-error" role="alert">{bookingError}</div>}
                   <div className="form-group"><label>Пациент *</label><select className="input" value={form.patient} onChange={(e) => setForm({ ...form, patient: e.target.value })} required><option value="">Выберите пациента</option>{patients.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select></div>
                   <div className="form-group"><label>Врач</label><select className="input" value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })}><option value="">Выберите врача</option>{doctors.map((d) => <option key={d.id} value={d.id}>{d.last_name} {d.first_name} ({d.username})</option>)}</select></div>
                   <div className="form-group"><label>Отделение</label><select className="input" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })}><option value="">Выберите отделение</option>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>

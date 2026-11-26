@@ -1,7 +1,7 @@
 from rest_framework import viewsets, filters
 from django_filters.rest_framework import DjangoFilterBackend
 
-from accounts.permissions import IsAuthenticatedAndRole, IsPatientOwnerOrStaff
+from accounts.permissions import IsAdminRole, IsAuthenticatedAndRole, IsPatientOwnerOrStaff
 from .models import Appointment
 from .serializers import AppointmentSerializer
 
@@ -26,8 +26,11 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         if self.action in ("update", "partial_update"):
             return [IsAuthenticatedAndRole()]
         if self.action == "destroy":
-            return [IsAuthenticatedAndRole()]
+            return [IsAdminRole()]
         return [IsPatientOwnerOrStaff()]
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
 
     def get_queryset(self):
         qs = super().get_queryset()

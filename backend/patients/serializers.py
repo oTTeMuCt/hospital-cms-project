@@ -1,5 +1,4 @@
 from rest_framework import serializers
-from django.db import models as db_models
 
 from accounts.serializers import SensitiveFieldsMixin
 from .models import Patient
@@ -19,7 +18,23 @@ class PatientSerializer(SensitiveFieldsMixin, serializers.ModelSerializer):
             "phone", "email", "telegram_id", "address", "emergency_contact",
             "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "telegram_id", "created_at", "updated_at"]
+
+    def get_fields(self):
+        fields = super().get_fields()
+        user = getattr(self.context.get("request"), "user", None)
+        if getattr(user, "role", None) == "patient":
+            fields["user"].read_only = True
+        return fields
+
+    def to_internal_value(self, data):
+        if hasattr(data, "get"):
+            data = data.copy()
+            for field in ("birth_date", "pinfl", "passport"):
+                value = data.get(field)
+                if isinstance(value, str) and not value.strip():
+                    data[field] = None
+        return super().to_internal_value(data)
 
     def validate_pinfl(self, value):
         if not value:

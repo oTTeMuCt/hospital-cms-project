@@ -3,14 +3,17 @@ import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export default function Login() {
-  const { login, isAuthenticated, loading } = useAuth();
+  const { login, isAuthenticated, loading, user } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   if (loading) return null;
-  if (isAuthenticated) return <Navigate to="/" replace />;
+  if (isAuthenticated) {
+    const completeProfile = user?.role === "patient" && sessionStorage.getItem("newPatientUser") === user.username;
+    return <Navigate to={completeProfile ? "/patients/new" : "/"} replace />;
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();

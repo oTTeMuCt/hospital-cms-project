@@ -49,10 +49,10 @@ export default function Register() {
         last_name: form.last_name.trim(),
         middle_name: form.middle_name.trim(),
       };
-      const regRes = await api.post("/auth/register/", payload);
+      await api.post("/auth/register/", payload);
       setSuccess(`Пользователь "${form.username}" успешно создан! Теперь заполните данные пациента.`);
-      sessionStorage.setItem("newPatientUser", JSON.stringify({ id: regRes.data.id, username: form.username }));
-      setTimeout(() => navigate("/patients/new"), 1500);
+      sessionStorage.setItem("newPatientUser", form.username.trim());
+      setTimeout(() => navigate("/login"), 1500);
     } catch (err) {
       const data = err.response?.data;
       if (data) {

@@ -1,24 +1,23 @@
-import logging
-import os
+from secrets import token_urlsafe
+
+from django.core import signing
 from django.db import transaction
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
+
+from notifications.subscription_models import Subscription
 
 from accounts.permissions import (
     IsAdminRole,
     IsAuthenticatedAndRole,
     IsPatientOwnerOrStaff,
-    IsRegistrar,
 )
 from rest_framework import permissions as drf_permissions
 from .models import Patient
+from .telegram import TELEGRAM_LINK_SALT
 from .serializers import PatientSerializer
-
-logger = logging.getLogger("patients.views")
-
 
 class PatientViewSet(viewsets.ModelViewSet):
     serializer_class = PatientSerializer
@@ -41,7 +40,7 @@ class PatientViewSet(viewsets.ModelViewSet):
             return [IsPatientOwnerOrStaff()]
         if self.action == "destroy":
             return [IsAdminRole()]
-        if self.action == "me":
+        if self.action in ("me", "telegram_link"):
             return [drf_permissions.IsAuthenticated()]
         return [IsPatientOwnerOrStaff()]
 
@@ -56,80 +55,46 @@ class PatientViewSet(viewsets.ModelViewSet):
             return qs
         return qs.none()
 
-    @action(detail=False, methods=["get"])
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+
+    @transaction.atomic
+    def destroy(self, request, *args, **kwargs):
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=False, methods=["get", "patch"])
+    @transaction.atomic
     def me(self, request):
-        """Return the patient profile for the currently authenticated user."""
-        try:
-            patient = request.user.patient_profile
+        profiles = self.get_queryset().filter(user=request.user)
+        if request.method == "PATCH":
+            profiles = profiles.select_for_update()
+        patient = profiles.first()
+        if patient is None:
+            return Response({"detail": "Профиль пациента не найден."}, status=status.HTTP_404_NOT_FOUND)
+        if request.method == "PATCH":
+            serializer = self.get_serializer(patient, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+        else:
             serializer = self.get_serializer(patient)
-            return Response(serializer.data)
-        except Patient.DoesNotExist:
-            return Response(
-                {"detail": "No patient profile is linked to your account."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        return Response({
+            **serializer.data,
+            "telegram_connected": Subscription.objects.filter(
+                patient=patient, is_active=True, is_verified=True,
+            ).exists(),
+        })
 
-
-class BotLinkTelegramView(APIView):
-    """
-    Endpoint called by the Telegram Bot to link a Telegram chat_id to a Patient.
-    Expects X-Bot-Key header for authentication.
-    """
-
-    permission_classes = [drf_permissions.AllowAny]
-
-    def post(self, request):
-        bot_api_key = os.getenv("BOT_API_KEY")
-        if not bot_api_key:
-            return Response({"error": "Bot API not configured"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        auth_header = request.META.get("HTTP_X_BOT_KEY", "")
-
-        if not auth_header or auth_header != bot_api_key:
-            return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
-
-        patient_id = request.data.get("patient_id")
-        telegram_id = request.data.get("telegram_id")
-
-        if not patient_id or not telegram_id:
-            return Response(
-                {"error": "patient_id and telegram_id are required"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Parse patient_id — accept "P-000001" or "1" or even "000001"
-        parsed_id = _parse_patient_id(patient_id)
-        if parsed_id is None:
-            return Response(
-                {"error": f"Invalid patient_id format: {patient_id}"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        try:
-            patient = Patient.objects.get(pk=parsed_id)
-        except Patient.DoesNotExist:
-            return Response(
-                {"error": f"Patient with id {patient_id} not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        patient.telegram_id = str(telegram_id)
-        patient.save(update_fields=["telegram_id"])
-        logger.info(
-            "Linked Telegram chat %s to patient %s (pk=%s)",
-            telegram_id, patient_id, patient.pk,
+    @action(detail=False, methods=["post"], url_path="telegram-link")
+    @transaction.atomic
+    def telegram_link(self, request):
+        patient = Patient.objects.select_for_update().filter(user=request.user).first()
+        if request.user.role != "patient" or patient is None:
+            return Response({"detail": "Требуется профиль пациента."}, status=status.HTTP_403_FORBIDDEN)
+        patient.telegram_link_nonce = token_urlsafe(18)
+        patient.save(update_fields=["telegram_link_nonce"])
+        code = signing.dumps(
+            {"patient": patient.pk, "nonce": patient.telegram_link_nonce},
+            salt=TELEGRAM_LINK_SALT,
         )
-
-        return Response({"status": "ok", "patient_id": patient.pk})
-
-
-def _parse_patient_id(raw: str) -> int | None:
-    """Parse patient ID from formats like 'P-000001', '1', '000001'."""
-    cleaned = raw.strip().upper()
-    if cleaned.startswith("P-"):
-        cleaned = cleaned[2:]
-    elif cleaned.startswith("P"):
-        cleaned = cleaned[1:]
-    cleaned = cleaned.lstrip("0")
-    if cleaned.isdigit():
-        return int(cleaned)
-    return None
+        return Response({"code": code}, headers={"Cache-Control": "private, no-store"})

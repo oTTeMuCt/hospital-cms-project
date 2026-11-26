@@ -5,12 +5,12 @@ Uses python-telegram-bot v21.x with database persistence for subscriptions.
 IMPORTANT: This bot uses a singleton lock file to prevent multiple polling instances.
 Do NOT run multiple copies of this bot simultaneously.
 """
-import json
+import asyncio
 import logging
 import os
 import sys
 import tempfile
-from pathlib import Path
+from html import escape
 from threading import Lock
 from dotenv import load_dotenv
 
@@ -154,22 +154,25 @@ def _load_subscriptions_from_api() -> None:
             _subscriptions = {}
 
 
-def _save_subscription_to_api(chat_id: int, patient_id: str) -> dict:
+def _save_subscription_to_api(chat_id: int, code: str) -> dict:
     """Save a subscription to the backend via API."""
     try:
         resp = requests.post(
             SUBSCRIPTIONS_URL,
-            json={"chat_id": chat_id, "patient_id_str": patient_id},
+            json={"chat_id": chat_id, "code": code},
             headers={"X-Bot-Key": BOT_API_KEY, "Content-Type": "application/json"},
             timeout=REQUEST_TIMEOUT,
         )
         if resp.status_code in (200, 201):
             return resp.json()
-        logger.warning("Failed to save subscription (status=%s): %s", resp.status_code, resp.text[:200])
-        return {"error": "Failed to save subscription"}
+        if resp.status_code == 409:
+            return {"error": "Сначала отмените предыдущую подписку."}
+        if resp.status_code == 400:
+            return {"error": "Код недействителен или истёк. Получите новый код в личном кабинете."}
+        return {"error": "Не удалось подключить подписку. Попробуйте позже."}
     except Exception as exc:
-        logger.error("Error saving subscription: %s", exc)
-        return {"error": str(exc)}
+        logger.error("Error saving subscription (%s)", type(exc).__name__)
+        return {"error": "Не удалось подключить подписку. Попробуйте позже."}
 
 
 def _delete_subscription_from_api(chat_id: int) -> dict:
@@ -183,10 +186,10 @@ def _delete_subscription_from_api(chat_id: int) -> dict:
         if resp.status_code in (200, 204):
             return {"status": "ok"}
         logger.warning("Failed to delete subscription (status=%s)", resp.status_code)
-        return {"error": "Failed to delete subscription"}
+        return {"error": "Не удалось отменить подписку. Попробуйте позже."}
     except Exception as exc:
-        logger.error("Error deleting subscription: %s", exc)
-        return {"error": str(exc)}
+        logger.error("Error deleting subscription (%s)", type(exc).__name__)
+        return {"error": "Не удалось отменить подписку. Попробуйте позже."}
 
 
 # ---------------------------------------------------------------------------
@@ -212,32 +215,13 @@ BACK_KEYBOARD = ReplyKeyboardMarkup(
 # Helpers — API call
 # ---------------------------------------------------------------------------
 
-def _link_telegram(patient_id: str, chat_id: int) -> dict:
-    """Tell backend to store telegram_id on the Patient record."""
-    try:
-        resp = requests.post(
-            f"{API_BASE_URL.rstrip('/')}/bot/link-telegram/",
-            json={"patient_id": patient_id, "telegram_id": str(chat_id)},
-            headers={"X-Bot-Key": BOT_API_KEY, "Content-Type": "application/json"},
-            timeout=REQUEST_TIMEOUT,
-        )
-        resp.encoding = "utf-8"
-        return resp.json()
-    except requests.exceptions.Timeout:
-        return {"error": "Сервер не отвечает."}
-    except requests.exceptions.ConnectionError:
-        return {"error": "Не удалось подключиться к серверу."}
-    except Exception as exc:
-        logger.exception("Error linking telegram for patient %s", patient_id)
-        return {"error": str(exc)}
-
-
-def _fetch_analyses(passport: str) -> dict:
-    """Call the backend bot endpoint and return parsed JSON."""
+def _fetch_analyses(chat_id: int, identifier: str) -> dict:
+    """Look up published results for the verified chat."""
+    identifier_field = "pinfl" if len(identifier) == 14 and identifier.isascii() and identifier.isdecimal() else "passport"
     try:
         resp = requests.post(
             ANALYSES_URL,
-            json={"passport": passport},
+            json={"chat_id": chat_id, identifier_field: identifier},
             headers={"X-Bot-Key": BOT_API_KEY},
             timeout=REQUEST_TIMEOUT,
         )
@@ -269,66 +253,42 @@ def _fetch_analyses(passport: str) -> dict:
 
 
 def _format_analyses(data: dict) -> tuple[str, str]:
-    """Return (text, parse_mode) for a nicely formatted analyses message."""
-    if data.get("status_code") == 403:
-        return "⚠️ <b>Доступ запрещён.</b>", "HTML"
     if data.get("error"):
-        return f"⚠️ {data['error']}", "HTML"
+        return "⚠️ " + escape(str(data["error"])), "HTML"
 
     patient = data.get("patient", {})
     analyses = data.get("analyses", [])
-
     lines = [
         "🔬 <b>Результаты анализов</b>",
-        "",
-        f"👤 <b>Пациент:</b> {patient.get('full_name', '—')}",
-        f"🎂 <b>Дата рождения:</b> {patient.get('birth_date', '—')}",
-        f"⚥ <b>Пол:</b> {patient.get('gender', '—')}",
+        f"Пациент: {escape(str(patient.get('full_name', '—')))}",
         "",
     ]
-
     if not analyses:
-        lines.append("<i>Анализы не найдены.</i>")
-        return "\n".join(lines), "HTML"
+        lines.append("Опубликованных анализов пока нет.")
 
-    lines.append(f"📊 <b>Найдено анализов: {len(analyses)}</b>")
-    lines.append("")
-
-    status_emoji = {
-        "pending": "⏳",
-        "in_progress": "🔬",
-        "completed": "✅",
-        "verified": "✔️",
-        "cancelled": "❌",
-    }
-
-    for a in analyses:
-        emoji = status_emoji.get(a.get("status"), "❓")
-        lines.append(
-            f"{emoji} <b>#{a.get('id')}</b> — {a.get('analysis_name', '—')}"
-        )
-        lines.append(f"   Статус: {a.get('status_display', '—')}")
-        lines.append(f"   Запрошен: {a.get('requested_at', '—')[:10]}")
-
-        if a.get("completed_at"):
-            lines.append(f"   Завершён: {a['completed_at'][:10]}")
-
-        if a.get("result"):
-            lines.append(f"   📝 Результат: {a['result']}")
-
-        if a.get("notes"):
-            lines.append(f"   📌 Примечание: {a['notes']}")
-
+    for result in analyses:
+        lines.append(f"<b>{escape(str(result.get('analysis_name', '—')))}</b>")
+        fields = result.get("result_fields") or []
+        if fields:
+            for field in fields:
+                parts = [
+                    f"{field.get('field_name', '')}: {field.get('value', '')}",
+                    field.get("unit"), field.get("interpretation"), field.get("reference_range_text"),
+                ]
+                lines.append(escape(" · ".join(str(part) for part in parts if part)))
+        elif result.get("result"):
+            lines.extend(escape(str(result["result"])).splitlines())
         lines.append("")
 
-    full_text = "\n".join(lines)
-    if len(full_text) > 4000:
-        trunc_lines = lines[:50]
-        trunc_lines.append("")
-        trunc_lines.append("<i>⚠️ Слишком много данных. Показаны последние результаты.</i>")
-        full_text = "\n".join(trunc_lines)
-
-    return full_text, "HTML"
+    visible = []
+    length = 0
+    for line in lines:
+        length += len(line.encode("utf-16-le")) // 2 + 1
+        if length > 3900:
+            visible.append("Показана часть результатов. Остальные доступны в личном кабинете.")
+            break
+        visible.append(line)
+    return "\n".join(visible), "HTML"
 
 
 # ---------------------------------------------------------------------------
@@ -336,7 +296,7 @@ def _format_analyses(data: dict) -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_name = update.effective_user.first_name or "Гость"
+    user_name = escape(update.effective_user.first_name or "Гость")
     text = (
         f"🏥 <b>Hospital CMS</b> — Бот уведомлений\n\n"
         f"Здравствуйте, <b>{user_name}</b>!\n\n"
@@ -350,7 +310,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
-    user_name = update.effective_user.first_name or "Пользователь"
+    user_name = escape(update.effective_user.first_name or "Пользователь")
 
     with _lock:
         patient_id = _subscriptions.get(chat_id)
@@ -376,107 +336,39 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def ask_patient_id(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    text = (
-        "🔔 <b>Подписка на уведомления</b>\n\n"
-        "Введите <b>ID пациента</b>, чтобы получать уведомления "
-        "о его анализах, приёмах и изменениях.\n\n"
-        "<i>Примеры: P-000001, 1</i>\n\n"
-        "<i>ID можно узнать у вашего врача или в личном кабинете HCMS.</i>"
-    )
+    context.user_data.pop("awaiting_passport", None)
     context.user_data["awaiting_patient_id"] = True
-    await update.message.reply_html(text, reply_markup=BACK_KEYBOARD)
-
-
-def _parse_patient_id(raw: str) -> str | None:
-    """Extract numeric patient ID from formats like 'P-000001' or '1'."""
-    cleaned = raw.strip().upper()
-    if cleaned.startswith("P-"):
-        cleaned = cleaned[2:]
-    elif cleaned.startswith("P"):
-        cleaned = cleaned[1:]
-    cleaned = cleaned.lstrip("0")
-    if cleaned.isdigit():
-        return cleaned
-    return None
+    await update.message.reply_html(
+        "Получите одноразовый код в профиле пациента Hospital CMS и отправьте его сюда.",
+        reply_markup=BACK_KEYBOARD,
+    )
 
 
 async def handle_patient_id_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not context.user_data.get("awaiting_patient_id"):
+    code = update.message.text.strip()
+    if not code:
         return
-
-    raw = update.message.text.strip()
-    patient_id = _parse_patient_id(raw)
-
-    if patient_id is None:
-        await update.message.reply_html(
-            "⚠️ ID пациента должен быть числом или формата <b>P-000001</b>.\n\n"
-            "Попробуйте ещё раз:",
-            reply_markup=BACK_KEYBOARD,
-        )
-        return
-
     chat_id = update.effective_chat.id
-
-    # Save to backend database via API
-    result = _save_subscription_to_api(chat_id, patient_id)
+    result = await asyncio.to_thread(_save_subscription_to_api, chat_id, code)
     if result.get("error"):
-        logger.warning("Failed to save subscription via API: %s", result["error"])
+        await update.message.reply_text(result["error"], reply_markup=BACK_KEYBOARD)
+        return
 
     with _lock:
-        _subscriptions[chat_id] = patient_id
-
+        _subscriptions[chat_id] = str(result["patient_id"])
     context.user_data.pop("awaiting_patient_id", None)
-
-    logger.info(
-        "Chat %d subscribed to patient %s (API save: %s)",
-        chat_id, patient_id, "ok" if not result.get("error") else "failed",
-    )
-
-    # Notify backend to store telegram_id on the Patient record
-    link_result = _link_telegram(raw, chat_id)
-    if link_result.get("error"):
-        logger.warning("Failed to link telegram on backend: %s", link_result["error"])
-
-    await update.message.reply_html(
-        f"✅ <b>Подписка оформлена!</b>\n\n"
-        f"Теперь вы будете получать уведомления для <b>Пациента #{patient_id}</b>.\n\n"
-        f"📋 Проверьте статус в разделе «Мой профиль».",
-        reply_markup=MAIN_KEYBOARD,
-    )
+    await update.message.reply_html("✅ <b>Подписка оформлена.</b>", reply_markup=MAIN_KEYBOARD)
 
 
 async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
-
+    result = await asyncio.to_thread(_delete_subscription_from_api, chat_id)
+    if result.get("error"):
+        await update.message.reply_text(result["error"], reply_markup=MAIN_KEYBOARD)
+        return
     with _lock:
-        patient_id = _subscriptions.pop(chat_id, None)
-
-    if patient_id:
-        # Delete from backend database via API
-        _delete_subscription_from_api(chat_id)
-
-        logger.info("Chat %d unsubscribed from patient %s", chat_id, patient_id)
-        # Clear telegram_id on the backend
-        try:
-            requests.post(
-                f"{API_BASE_URL.rstrip('/')}/bot/link-telegram/",
-                json={"patient_id": patient_id, "telegram_id": ""},
-                headers={"X-Bot-Key": BOT_API_KEY, "Content-Type": "application/json"},
-                timeout=REQUEST_TIMEOUT,
-            )
-        except Exception:
-            pass
-        await update.message.reply_html(
-            f"🗑️ <b>Подписка отменена</b>\n\n"
-            f"Вы больше не получаете уведомления для <b>Пациента #{patient_id}</b>.",
-            reply_markup=MAIN_KEYBOARD,
-        )
-    else:
-        await update.message.reply_html(
-            "ℹ️ У вас нет активных подписок.\n\n"
-            "Нажмите «🔔 Подписаться» чтобы начать.",
-            reply_markup=MAIN_KEYBOARD,
-        )
+        _subscriptions.pop(chat_id, None)
+    await update.message.reply_html("🗑️ <b>Подписка отменена.</b>", reply_markup=MAIN_KEYBOARD)
 
 
 async def ask_passport_for_analyses(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -487,6 +379,7 @@ async def ask_passport_for_analyses(update: Update, context: ContextTypes.DEFAUL
         "чтобы найти результаты ваших анализов.\n\n"
         "<i>Пример: AA1234567</i>"
     )
+    context.user_data.pop("awaiting_patient_id", None)
     context.user_data["awaiting_passport"] = True
     await update.message.reply_html(text, reply_markup=BACK_KEYBOARD)
 
@@ -509,7 +402,7 @@ async def handle_passport_input(update: Update, context: ContextTypes.DEFAULT_TY
         chat_id=update.effective_chat.id, action="typing"
     )
 
-    data = _fetch_analyses(passport)
+    data = await asyncio.to_thread(_fetch_analyses, update.effective_chat.id, passport)
     text, parse_mode = _format_analyses(data)
 
     if parse_mode == "HTML":
@@ -522,7 +415,7 @@ async def show_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = (
         "📖 <b>Помощь</b>\n\n"
         "<b>📋 Мой профиль</b> — текущий статус подписки\n"
-        "<b>🔔 Подписаться</b> — привязать ID пациента\n"
+        "<b>🔔 Подписаться</b> — ввести одноразовый код из личного кабинета\n"
         "<b>🔬 Мои анализы</b> — результаты по паспорту/ПИНФЛ\n"
         "<b>❌ Отписаться</b> — отменить подписку\n"
         "<b>📖 Помощь</b> — это сообщение\n\n"
@@ -542,6 +435,11 @@ async def go_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Route text messages that aren't commands."""
+    text = update.message.text.strip()
+    if text == "🏠 В главное меню":
+        await go_main_menu(update, context)
+        return
+
     if context.user_data.get("awaiting_passport"):
         await handle_passport_input(update, context)
         return
@@ -549,8 +447,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if context.user_data.get("awaiting_patient_id"):
         await handle_patient_id_input(update, context)
         return
-
-    text = update.message.text.strip()
 
     if text == "📋 Мой профиль":
         await show_profile(update, context)
@@ -562,8 +458,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await unsubscribe(update, context)
     elif text == "📖 Помощь":
         await show_help(update, context)
-    elif text == "🏠 В главное меню":
-        await go_main_menu(update, context)
     else:
         await update.message.reply_text(
             "Пожалуйста, используйте кнопки меню ↓",
@@ -585,38 +479,6 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 # ---------------------------------------------------------------------------
-# Subscription loading — database-backed only
-# ---------------------------------------------------------------------------
-
-SUBSCRIPTIONS_FILE = Path(os.getenv("SUBSCRIPTIONS_FILE", "subscriptions.json"))
-
-
-def _load_subscriptions() -> None:
-    """Load subscriptions from the backend API (database-backed)."""
-    _load_subscriptions_from_api()
-    # If API returned empty and legacy JSON file exists, migrate it once
-    if not _subscriptions and SUBSCRIPTIONS_FILE.exists():
-        try:
-            raw = SUBSCRIPTIONS_FILE.read_text(encoding="utf-8")
-            data = {int(k): v for k, v in json.loads(raw).items()}
-            # Migrate each legacy subscription to the API
-            for chat_id, patient_id in data.items():
-                _save_subscription_to_api(chat_id, patient_id)
-            # Rename the legacy file so it won't be used again
-            backup_path = SUBSCRIPTIONS_FILE.with_suffix(".json.migrated")
-            SUBSCRIPTIONS_FILE.rename(backup_path)
-            with _lock:
-                _subscriptions.update(data)
-            logger.info(
-                "Migrated %d subscription(s) from legacy JSON to database. "
-                "Legacy file renamed to %s",
-                len(data), backup_path.name,
-            )
-        except (json.JSONDecodeError, ValueError, OSError) as exc:
-            logger.warning("Failed to migrate subscriptions from JSON: %s", exc)
-
-
-# ---------------------------------------------------------------------------
 # Bootstrap
 # ---------------------------------------------------------------------------
 
@@ -625,20 +487,20 @@ def main() -> None:
         sys.exit(1)
 
     try:
-        _load_subscriptions()
+        _load_subscriptions_from_api()
 
         app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
         # Commands
-        app.add_handler(CommandHandler("start", cmd_start))
-        app.add_handler(CommandHandler("profile", show_profile))
-        app.add_handler(CommandHandler("subscribe", ask_patient_id))
-        app.add_handler(CommandHandler("unsubscribe", unsubscribe))
-        app.add_handler(CommandHandler("help", show_help))
-        app.add_handler(CommandHandler("analyses", ask_passport_for_analyses))
+        app.add_handler(CommandHandler("start", cmd_start, filters=filters.ChatType.PRIVATE))
+        app.add_handler(CommandHandler("profile", show_profile, filters=filters.ChatType.PRIVATE))
+        app.add_handler(CommandHandler("subscribe", ask_patient_id, filters=filters.ChatType.PRIVATE))
+        app.add_handler(CommandHandler("unsubscribe", unsubscribe, filters=filters.ChatType.PRIVATE))
+        app.add_handler(CommandHandler("help", show_help, filters=filters.ChatType.PRIVATE))
+        app.add_handler(CommandHandler("analyses", ask_passport_for_analyses, filters=filters.ChatType.PRIVATE))
 
         # Text messages (keyboard buttons + input states)
-        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+        app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, handle_text))
 
         app.add_error_handler(error_handler)
 

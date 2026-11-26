@@ -1,5 +1,5 @@
-from django.contrib.contenttypes.models import ContentType
 from rest_framework import serializers
+from rest_framework.reverse import reverse
 
 from .models import File
 
@@ -12,7 +12,15 @@ ALLOWED_MIME_TYPES = {
 }
 
 
+class AttachmentField(serializers.FileField):
+    def to_representation(self, value):
+        if not value:
+            return None
+        return reverse("file-download", args=[value.instance.pk], request=self.context.get("request"))
+
+
 class FileSerializer(serializers.ModelSerializer):
+    file = AttachmentField(required=False, allow_null=True)
     content_type_name = serializers.CharField(source="content_type.model", read_only=True)
 
     class Meta:

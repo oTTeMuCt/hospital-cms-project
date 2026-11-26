@@ -22,26 +22,23 @@ export default function PatientForm() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
 
+  const isPatient = user?.role === "patient";
+  const [profileLoaded, setProfileLoaded] = useState(false);
+
   useEffect(() => {
-    const stored = sessionStorage.getItem("newPatientUser");
-    if (stored) {
-      try {
-        const newUser = JSON.parse(stored);
-        setForm((prev) => ({
-          ...prev,
-          full_name: `${user?.last_name || ""} ${user?.first_name || ""} ${user?.middle_name || ""}`.trim() || newUser.username,
-          email: user?.email || "",
-        }));
-      } catch {
-        // legacy plain string format
-        setForm((prev) => ({
-          ...prev,
-          full_name: `${user?.last_name || ""} ${user?.first_name || ""} ${user?.middle_name || ""}`.trim() || stored,
-          email: user?.email || "",
-        }));
-      }
-    }
-  }, [user]);
+    if (!isPatient) return;
+    let active = true;
+    api.get("/patients/me/").then(({ data }) => {
+      if (!active) return;
+      setForm((current) => Object.fromEntries(
+        Object.keys(current).map((field) => [field, data[field] ?? ""]),
+      ));
+      setProfileLoaded(true);
+    }).catch(() => {
+      if (active) setError("Не удалось загрузить профиль пациента.");
+    });
+    return () => { active = false; };
+  }, [isPatient, user?.id]);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -52,6 +49,7 @@ export default function PatientForm() {
     setError(null);
     setSuccess(null);
 
+    if (isPatient && !profileLoaded) return;
     if (!form.full_name.trim()) {
       setError("ФИО обязательно для заполнения");
       return;
@@ -59,52 +57,15 @@ export default function PatientForm() {
 
     setSaving(true);
     try {
-      const payload = { ...form };
-      const stored = sessionStorage.getItem("newPatientUser");
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored);
-          if (parsed.id) {
-            payload.user = parsed.id;
-          }
-        } catch {
-          // legacy plain string format - fallback to user lookup
-          try {
-            const usersRes = await api.get("/users/");
-            const users = usersRes.data.results || usersRes.data;
-            const matchedUser = users.find((u) => u.username === stored);
-            if (matchedUser) {
-              payload.user = matchedUser.id;
-            }
-          } catch {}
-        }
+      if (isPatient) {
+        await api.patch("/patients/me/", form);
+        sessionStorage.removeItem("newPatientUser");
+        navigate("/profile");
+        return;
       }
-      if (!payload.user && user?.role === "patient") {
-        payload.user = user.id;
-      }
-
-      const res = await api.post("/patients/", payload);
+      const res = await api.post("/patients/", form);
       setSuccess(`Пациент "${res.data.full_name}" успешно зарегистрирован!`);
-      sessionStorage.removeItem("newPatientUser");
-
-      setForm({
-        full_name: "",
-        birth_date: "",
-        gender: "",
-        blood_group: "",
-        pinfl: "",
-        passport: "",
-        phone: "",
-        email: "",
-        address: "",
-        emergency_contact: "",
-      });
-
-      if (user?.role === "patient" || stored) {
-        setTimeout(() => navigate("/"), 1500);
-      } else {
-        setTimeout(() => navigate("/patients"), 1500);
-      }
+      setTimeout(() => navigate("/patients"), 1500);
     } catch (err) {
       const data = err.response?.data;
       if (data) {
@@ -123,7 +84,7 @@ export default function PatientForm() {
   return (
     <div>
       <div className="page-header">
-        <h1>Регистрация пациента</h1>
+        <h1>{isPatient ? "Заполнение профиля" : "Регистрация пациента"}</h1>
         <p>Заполните форму для создания карточки пациента</p>
       </div>
 
@@ -154,10 +115,12 @@ export default function PatientForm() {
             </div>
 
             <div className="form-row">
-              <div className="form-group">
-                <label>ПИНФЛ</label>
-                <input className="input" name="pinfl" value={form.pinfl} onChange={handleChange} placeholder="14 цифр" maxLength={14} />
-              </div>
+              {!isPatient && (
+                <div className="form-group">
+                  <label>ПИНФЛ</label>
+                  <input className="input" name="pinfl" value={form.pinfl} onChange={handleChange} placeholder="14 цифр" maxLength={14} />
+                </div>
+              )}
               <div className="form-group">
                 <label>Паспорт</label>
                 <input className="input" name="passport" value={form.passport} onChange={handleChange} placeholder="AB1234567" />
@@ -197,10 +160,10 @@ export default function PatientForm() {
             </div>
 
             <div style={{ display: "flex", gap: "12px", marginTop: "16px" }}>
-              <button type="submit" className="btn btn-primary btn-lg" disabled={saving}>
+              <button type="submit" className="btn btn-primary btn-lg" disabled={saving || (isPatient && !profileLoaded)}>
                 {saving ? "Сохранение..." : "Зарегистрировать"}
               </button>
-              <button type="button" className="btn btn-outline btn-lg" onClick={() => navigate("/patients")}>
+              <button type="button" className="btn btn-outline btn-lg" onClick={() => navigate(isPatient ? "/profile" : "/patients")}>
                 Отмена
               </button>
             </div>

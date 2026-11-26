@@ -87,3 +87,29 @@ class NotificationDeliveryTests(TestCase):
         self.assertEqual(notification.status, NotificationStatus.FAILED)
         self.assertNotIn("Provider detail", notification.error_message)
         self.assertEqual(send_email.call_count, 4)
+
+
+class TelegramSubscriptionTests(TestCase):
+    @patch.dict("os.environ", {"BOT_API_KEY": "test-bot-key"})
+    def test_link_code_is_single_use_and_unsubscribe_removes_delivery_target(self):
+        from .subscription_models import Subscription
+
+        patient_user = get_user_model().objects.create(username="patient", role="patient")
+        patient = patient_user.patient_profile
+        client = APIClient()
+        client.force_authenticate(patient_user)
+        issue = client.post("/api/patients/telegram-link/")
+        self.assertEqual(issue.status_code, 200)
+        client.force_authenticate(None)
+        headers = {"HTTP_X_BOT_KEY": "test-bot-key"}
+        payload = {"chat_id": 1234, "code": issue.data["code"]}
+        response = client.post("/api/bot/subscriptions/", payload, format="json", **headers)
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertTrue(Subscription.objects.filter(patient=patient, is_active=True, is_verified=True).exists())
+        self.assertEqual(client.post("/api/bot/subscriptions/", payload, format="json", **headers).status_code, 400)
+
+        self.assertEqual(client.delete("/api/bot/subscriptions/1234/", **headers).status_code, 200)
+        self.assertEqual(client.delete("/api/bot/subscriptions/1234/", **headers).status_code, 200)
+        patient.refresh_from_db()
+        self.assertEqual(patient.telegram_id, "")
+        self.assertFalse(Subscription.objects.filter(patient=patient).exists())

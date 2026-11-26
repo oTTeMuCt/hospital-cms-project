@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import api from "../api";
 
@@ -8,6 +9,23 @@ export default function PatientProfile() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [toastVisible, setToastVisible] = useState(false);
+  const [telegramCode, setTelegramCode] = useState("");
+  const [telegramError, setTelegramError] = useState("");
+  const [creatingCode, setCreatingCode] = useState(false);
+
+  async function createTelegramCode() {
+    setCreatingCode(true);
+    setTelegramCode("");
+    setTelegramError("");
+    try {
+      const { data } = await api.post("/patients/telegram-link/");
+      setTelegramCode(data.code);
+    } catch {
+      setTelegramError("Не удалось создать код Telegram. Попробуйте ещё раз.");
+    } finally {
+      setCreatingCode(false);
+    }
+  }
 
   useEffect(() => {
     const fetchPatient = async () => {
@@ -63,6 +81,7 @@ export default function PatientProfile() {
       <div className="page-header">
         <h1>Профиль пациента</h1>
         <p>Ваш персональный медицинский кабинет</p>
+        <Link className="btn btn-outline" to="/patients/new">Редактировать профиль</Link>
       </div>
 
       <div className="page-content">
@@ -94,9 +113,9 @@ export default function PatientProfile() {
               </div>
               <div className="profile-info">
                 <h2 className="profile-name">
-                  {user?.last_name} {user?.first_name} {user?.middle_name || ""}
+                  {patient.full_name}
                 </h2>
-                <p className="profile-email">{user?.email || patient.email}</p>
+                <p className="profile-email">{patient.email || user?.email}</p>
                 {patient.phone && <p className="profile-phone">{patient.phone}</p>}
                 <p className="profile-date">
                   Registered: {new Date(patient.created_at).toLocaleDateString("en-US", {
@@ -113,7 +132,7 @@ export default function PatientProfile() {
               <div className="patient-id-label">Your Patient ID</div>
               <div className="patient-id-value">{formatPatientId(patient.id)}</div>
               <p className="patient-id-hint">
-                Use this Patient ID when connecting to our Telegram Bot.
+                Этот ID можно сообщить регистратуре.
               </p>
               <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
                 <button className="btn btn-primary btn-copy" onClick={copyPatientId}>
@@ -137,7 +156,7 @@ export default function PatientProfile() {
               <div className="card">
                 <div className="card-header">
                   <h3 className="card-title">Connect Telegram</h3>
-                  {patient.telegram_id ? (
+                  {patient.telegram_connected ? (
                     <span className="badge badge-success">Connected</span>
                   ) : (
                     <span className="badge badge-danger">Not Connected</span>
@@ -148,11 +167,14 @@ export default function PatientProfile() {
                     To receive notifications:
                   </p>
                   <ol className="telegram-steps">
-                    <li>Open <a href={TELEGRAM_BOT_LINK} target="_blank" rel="noopener noreferrer">Telegram Bot</a>.</li>
-                    <li>Send: <code>/start</code></li>
-                    <li>Then send: <code>/connect</code></li>
-                    <li>Enter your Patient ID: <strong>{formatPatientId(patient.id)}</strong></li>
+                    <li>Получите одноразовый код в личном кабинете.</li>
+                    <li>В личном чате с ботом отправьте <code>/subscribe</code>, затем код.</li>
                   </ol>
+                  <button className="btn btn-outline" onClick={createTelegramCode} disabled={creatingCode}>
+                    Получить код Telegram
+                  </button>
+                  {telegramCode && <p><code style={{ overflowWrap: "anywhere" }}>{telegramCode}</code> · действует 10 минут</p>}
+                  {telegramError && <p role="alert">{telegramError}</p>}
                   <p className="text-muted" style={{ marginTop: 16, fontSize: 13 }}>
                     After linking your account you will receive notifications about:
                   </p>
