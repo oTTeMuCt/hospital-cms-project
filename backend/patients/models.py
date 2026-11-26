@@ -55,6 +55,7 @@ class Patient(models.Model):
     )
     phone = models.CharField("Телефон", max_length=32, blank=True)
     email = models.EmailField("Email", blank=True)
+    telegram_link_nonce = models.CharField(max_length=32, blank=True, editable=False)
     telegram_id = models.CharField("Telegram ID", max_length=64, blank=True)
     address = models.CharField("Адрес регистрации", max_length=512, blank=True)
     emergency_contact = models.CharField("Экстренный контакт", max_length=255, blank=True)

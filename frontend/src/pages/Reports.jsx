@@ -1,6 +1,14 @@
 import { useState } from "react";
 import api from "../api";
 
+function serializeCsv(rows) {
+  return rows.map((row) => row.map((value) => {
+    const text = String(value ?? "");
+    const safe = /^[\s]*[=+@-]/.test(text) ? "'" + text : text;
+    return '"' + safe.replaceAll('"', '""') + '"';
+  }).join(",")).join("\r\n");
+}
+
 export default function Reports() {
   const [loadingPatients, setLoadingPatients] = useState(false);
   const [loadingAnalyses, setLoadingAnalyses] = useState(false);
@@ -15,7 +23,9 @@ export default function Reports() {
       const data = res.data;
       const pageResults = data.results || data;
       aggregated.push(...pageResults);
-      nextUrl = data.next;
+      if (!data.next) break;
+      const next = new URL(data.next, window.location.origin);
+      nextUrl = next.pathname.replace(/^\/api(?=\/)/, "") + next.search;
       query = {};
     }
     return aggregated;
@@ -25,7 +35,10 @@ export default function Reports() {
     setLoadingPatients(true); setMessage(null);
     try {
       const patients = await fetchAllPages("/patients/");
-      const csv = ["ID,ФИО,Дата рождения,Телефон,ПИНФЛ,Паспорт,Email", ...patients.map((p) => [p.id, p.full_name || "", p.birth_date || "", p.phone || "", p.pinfl || "", p.passport || "", p.email || ""].join(","))].join("\n");
+      const csv = serializeCsv([
+        ["ID", "ФИО", "Дата рождения", "Телефон", "ПИНФЛ", "Паспорт", "Email"],
+        ...patients.map((p) => [p.id, p.full_name, p.birth_date, p.phone, p.pinfl, p.passport, p.email]),
+      ]);
       const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -40,7 +53,12 @@ export default function Reports() {
     setLoadingAnalyses(true); setMessage(null);
     try {
       const orders = await fetchAllPages("/analysis-orders/");
-      const csv = ["ID,Пациент,Анализ,Статус,Назначен,Результат", ...orders.map((o) => [o.id, o.patient_name || o.patient?.full_name || o.patient || "", o.analysis_type_name || o.analysis_type?.name || o.analysis_type || "", o.status || "", o.requested_at?.slice(0, 10) || "", (o.result || "").replace(/,/g, ";")].join(","))].join("\n");
+      const csv = serializeCsv([
+        ["ID", "Пациент", "Анализ", "Статус", "Назначен", "Результат"],
+        ...orders.map((o) => [o.id, o.patient_name || o.patient?.full_name || o.patient,
+          o.analysis_type_name || o.analysis_type?.name || o.analysis_type, o.status,
+          o.requested_at?.slice(0, 10), o.result]),
+      ]);
       const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

@@ -94,8 +94,11 @@ services:
       dockerfile: Dockerfile
     ports:
       - "${FRONTEND_PORT:-3000}:80"
+    volumes:
+      - static_data:/srv/django-static:ro
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: unless-stopped
 
   celery_worker:

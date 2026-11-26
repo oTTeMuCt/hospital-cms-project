@@ -30,7 +30,6 @@ class BotAnalysisResultSerializer(serializers.ModelSerializer):
             "completed_at",
             "result",
             "result_fields",
-            "notes",
         ]
 
     def get_result_fields(self, obj):

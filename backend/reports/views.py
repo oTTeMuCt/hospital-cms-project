@@ -1,6 +1,8 @@
 import io
 import logging
 from datetime import datetime
+from pathlib import Path
+from xml.sax.saxutils import escape
 
 from django.conf import settings
 from django.http import HttpResponse
@@ -24,12 +26,24 @@ try:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.lib.units import mm
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
     from reportlab.platypus import (
         Paragraph,
         SimpleDocTemplate,
         Spacer,
         Table,
         TableStyle,
+    )
+    font_dir = Path(__file__).with_name("fonts")
+    for variant in ("Regular", "Bold", "Italic"):
+        font_name = f"LiberationSans-{variant}"
+        pdfmetrics.registerFont(TTFont(font_name, str(font_dir / f"{font_name}.ttf")))
+    pdfmetrics.registerFontFamily(
+        "LiberationSans-Regular",
+        normal="LiberationSans-Regular",
+        bold="LiberationSans-Bold",
+        italic="LiberationSans-Italic",
     )
     HAS_REPORTLAB = True
 except ImportError:
@@ -54,6 +68,15 @@ from patients.models import Patient
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _pdf_styles():
+    styles = getSampleStyleSheet()
+    for name, variant in (
+        ("Normal", "Regular"), ("Title", "Bold"), ("Heading2", "Bold"), ("Italic", "Italic"),
+    ):
+        styles[name].fontName = f"LiberationSans-{variant}"
+    return styles
+
 
 def _create_pdf_response(filename):
     """Возвращает HTTP-ответ с заголовками для PDF."""
@@ -88,7 +111,7 @@ class PatientsPDFView(APIView):
             )
         buf = io.BytesIO()
         doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=20 * mm, bottomMargin=20 * mm)
-        styles = getSampleStyleSheet()
+        styles = _pdf_styles()
         elements = []
 
         # Заголовок
@@ -125,7 +148,7 @@ class PatientsPDFView(APIView):
         table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2b5797")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTNAME", (0, 0), (-1, -1), "LiberationSans-Regular"),
             ("FONTSIZE", (0, 0), (-1, -1), 9),
             ("ALIGN", (0, 0), (0, -1), "CENTER"),
             ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
@@ -224,7 +247,7 @@ class AnalysesPDFView(APIView):
             )
         buf = io.BytesIO()
         doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=20 * mm, bottomMargin=20 * mm)
-        styles = getSampleStyleSheet()
+        styles = _pdf_styles()
         elements = []
 
         title_style = styles["Title"]
@@ -259,7 +282,7 @@ class AnalysesPDFView(APIView):
         table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2b5797")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTNAME", (0, 0), (-1, -1), "LiberationSans-Regular"),
             ("FONTSIZE", (0, 0), (-1, -1), 8),
             ("ALIGN", (0, 0), (0, -1), "CENTER"),
             ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
@@ -316,12 +339,12 @@ class SchedulePDFView(APIView):
 
         buf = io.BytesIO()
         doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=20 * mm, bottomMargin=20 * mm)
-        styles = getSampleStyleSheet()
+        styles = _pdf_styles()
         elements = []
 
         title_style = styles["Title"]
         elements.append(Paragraph(f"Расписание приёмов врача", title_style))
-        elements.append(Paragraph(doctor_name, styles["Heading2"]))
+        elements.append(Paragraph(escape(doctor_name), styles["Heading2"]))
         elements.append(Spacer(1, 8 * mm))
 
         style_normal = styles["Normal"]
@@ -349,7 +372,7 @@ class SchedulePDFView(APIView):
         table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2b5797")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTNAME", (0, 0), (-1, -1), "LiberationSans-Regular"),
             ("FONTSIZE", (0, 0), (-1, -1), 9),
             ("ALIGN", (0, 0), (0, -1), "CENTER"),
             ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),

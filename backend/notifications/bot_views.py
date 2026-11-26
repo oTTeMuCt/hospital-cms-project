@@ -1,116 +1,111 @@
-"""
-API endpoints for the Telegram Bot to manage subscriptions via database.
-Replaces JSON file-based subscription storage.
-"""
-import logging
-
-from django.db import IntegrityError
-from rest_framework import status
+from django.core import signing
+from django.db import IntegrityError, transaction
+from django.utils.crypto import constant_time_compare
+from rest_framework import serializers, status
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from patients.models import Patient
+from patients.telegram import TELEGRAM_LINK_SALT, TELEGRAM_LINK_TTL, is_bot_request
+
 from .subscription_models import Subscription
 
-logger = logging.getLogger("notifications.bot_views")
+
+class SubscriptionRequest(serializers.Serializer):
+    chat_id = serializers.IntegerField(min_value=1, max_value=2**63 - 1)
+    code = serializers.CharField(max_length=512)
 
 
 class BotSubscriptionListCreateView(APIView):
-    """
-    GET /api/bot/subscriptions/ — list all subscriptions (for bot cache warmup)
-    POST /api/bot/subscriptions/ — create a subscription
-
-    Protected by X-Bot-Key header.
-    """
     permission_classes = [AllowAny]
 
-    def _verify_bot_key(self, request) -> bool:
-        import os
-        expected_key = os.getenv("BOT_API_KEY")
-        if not expected_key:
-            return False
-        bot_key = request.headers.get("X-Bot-Key", "")
-        return bot_key == expected_key
-
     def get(self, request):
-        if not self._verify_bot_key(request):
-            return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
-
-        subscriptions = Subscription.objects.filter(is_active=True).values(
+        if not is_bot_request(request):
+            raise PermissionDenied()
+        subscriptions = Subscription.objects.filter(is_active=True, is_verified=True).values(
             "chat_id", "patient_id", "patient_id_str"
         )
-        return Response(list(subscriptions), status=status.HTTP_200_OK)
+        return Response(list(subscriptions))
 
     def post(self, request):
-        if not self._verify_bot_key(request):
-            return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
-
-        chat_id = request.data.get("chat_id")
-        patient_id_str = request.data.get("patient_id_str", "")
-
-        if not chat_id or not patient_id_str:
-            return Response(
-                {"error": "chat_id and patient_id_str are required"},
-                status=status.HTTP_400_BAD_REQUEST,
+        if not is_bot_request(request):
+            raise PermissionDenied()
+        serializer = SubscriptionRequest(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        chat_id = serializer.validated_data["chat_id"]
+        try:
+            code = signing.loads(
+                serializer.validated_data["code"], salt=TELEGRAM_LINK_SALT, max_age=TELEGRAM_LINK_TTL,
             )
+        except signing.BadSignature as exc:
+            raise serializers.ValidationError({"code": "Код недействителен или истёк."}) from exc
 
         try:
-            sub, created = Subscription.objects.update_or_create(
-                chat_id=int(chat_id),
-                defaults={
-                    "patient_id_str": patient_id_str,
-                    "is_active": True,
-                },
-            )
-            logger.info(
-                "Bot subscription %s: chat_id=%s, patient_id_str=%s",
-                "created" if created else "updated",
-                chat_id,
-                patient_id_str,
-            )
+            with transaction.atomic():
+                patient = Patient.objects.select_for_update().filter(pk=code["patient"]).first()
+                if not patient or not patient.telegram_link_nonce or not constant_time_compare(
+                    patient.telegram_link_nonce, code["nonce"],
+                ):
+                    raise serializers.ValidationError({"code": "Код уже использован или недействителен."})
+
+                active = Subscription.objects.filter(is_active=True, is_verified=True)
+                if active.filter(patient=patient).exclude(chat_id=chat_id).exists() or active.filter(
+                    chat_id=chat_id,
+                ).exclude(patient=patient).exists():
+                    return Response(
+                        {"detail": "Сначала отмените предыдущую подписку."},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+
+                subscription, created = Subscription.objects.select_for_update().get_or_create(
+                    chat_id=chat_id,
+                    defaults={
+                        "patient": patient, "patient_id_str": str(patient.pk),
+                        "is_active": True, "is_verified": True,
+                    },
+                )
+                if not created:
+                    if subscription.is_verified and subscription.is_active and subscription.patient_id != patient.pk:
+                        return Response(
+                            {"detail": "Сначала отмените предыдущую подписку."},
+                            status=status.HTTP_409_CONFLICT,
+                        )
+                    subscription.patient = patient
+                    subscription.patient_id_str = str(patient.pk)
+                    subscription.is_active = True
+                    subscription.is_verified = True
+                    subscription.save()
+                patient.telegram_id = str(chat_id)
+                patient.telegram_link_nonce = ""
+                patient.save(update_fields=["telegram_id", "telegram_link_nonce"])
+        except IntegrityError:
             return Response(
-                {
-                    "status": "ok",
-                    "chat_id": sub.chat_id,
-                    "patient_id_str": sub.patient_id_str,
-                    "created": created,
-                },
-                status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+                {"detail": "Аккаунт или чат уже привязан."}, status=status.HTTP_409_CONFLICT,
             )
-        except (IntegrityError, ValueError) as exc:
-            logger.error("Failed to create subscription: %s", exc)
-            return Response(
-                {"error": str(exc)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+
+        return Response(
+            {"status": "ok", "patient_id": patient.pk},
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
 
 
 class BotSubscriptionDeleteView(APIView):
-    """
-    DELETE /api/bot/subscriptions/<chat_id>/
-    Delete a subscription by chat_id.
-    """
     permission_classes = [AllowAny]
 
-    def _verify_bot_key(self, request) -> bool:
-        import os
-        expected_key = os.getenv("BOT_API_KEY")
-        if not expected_key:
-            return False
-        bot_key = request.headers.get("X-Bot-Key", "")
-        return bot_key == expected_key
-
+    @transaction.atomic
     def delete(self, request, chat_id):
-        if not self._verify_bot_key(request):
-            return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+        if not is_bot_request(request):
+            raise PermissionDenied()
 
-        try:
-            sub = Subscription.objects.get(chat_id=chat_id)
-            sub.delete()
-            logger.info("Bot subscription deleted: chat_id=%s", chat_id)
-            return Response({"status": "ok"}, status=status.HTTP_200_OK)
-        except Subscription.DoesNotExist:
-            return Response(
-                {"error": "Subscription not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        existing = Subscription.objects.filter(chat_id=chat_id).first()
+        if existing is not None:
+            if existing.patient_id is not None:
+                Patient.objects.select_for_update().filter(pk=existing.patient_id).first()
+            deleted, _ = Subscription.objects.filter(
+                pk=existing.pk, chat_id=chat_id, patient_id=existing.patient_id, is_verified=existing.is_verified,
+            ).delete()
+            if deleted and existing.patient_id is not None:
+                Patient.objects.filter(pk=existing.patient_id, telegram_id=str(chat_id)).update(telegram_id="")
+        return Response({"status": "ok"})

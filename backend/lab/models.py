@@ -33,6 +33,9 @@ class AnalysisStatus(models.TextChoices):
     SENT = "sent", "Отправлен пациенту"
 
 
+PUBLISHED_STATUSES = (AnalysisStatus.SENT,)
+
+
 ALLOWED_TRANSITIONS = {
     AnalysisStatus.CREATED: {AnalysisStatus.ORDERED},
     AnalysisStatus.ORDERED: {AnalysisStatus.IN_PROGRESS, AnalysisStatus.CREATED},

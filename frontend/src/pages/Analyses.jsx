@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import api from "../api";
+import api, { getErrorMessage } from "../api";
 import { useAuth } from "../context/AuthContext";
 
 const STATUS_META = {
@@ -32,6 +32,8 @@ export default function Analyses() {
   const [resultFields, setResultFields] = useState([]);
   const [resultValues, setResultValues] = useState({});
   const [resultNotes, setResultNotes] = useState("");
+  const [resultText, setResultText] = useState("");
+  const [resultError, setResultError] = useState("");
   const [loadingFields, setLoadingFields] = useState(false);
   const isDoctor = role === "doctor" || role === "chief_doctor" || role === "admin";
   const isLabTech = role === "lab_tech";
@@ -70,6 +72,8 @@ export default function Analyses() {
 
   const openResultModal = async (order) => {
     setResultOrder(order);
+    setResultText(order.result || "");
+    setResultError("");
     setResultModal(order.id);
     setResultNotes(order.notes || "");
 
@@ -105,6 +109,7 @@ export default function Analyses() {
   const handleSaveResult = async (e) => {
     e.preventDefault();
     if (!resultModal || !resultOrder) return;
+    setResultError("");
 
     // Build result_values array from the form — use resultFields state
     const fields = resultFields.length > 0 ? resultFields : (resultOrder.analysis_type_fields || []);
@@ -115,28 +120,16 @@ export default function Analyses() {
 
     try {
       await api.patch(`/analysis-orders/${resultModal}/`, {
-        result_values: resultValuesPayload,
+        ...(fields.length ? { result_values: resultValuesPayload } : { result: resultText.trim() }),
         notes: resultNotes,
       });
       setResultModal(null);
       setResultOrder(null);
       fetchData();
     } catch (err) {
-  console.log("=== SAVE RESULT ERROR ===");
-  console.log("Status:", err.response?.status);
-  console.log("Data:", err.response?.data);
-  console.log("Full response:", err.response);
-
-  const data = err.response?.data;
-  if (data) {
-    const messages = Object.entries(data)
-      .map(([key, val]) => `${key}: ${Array.isArray(val) ? val[0] : val}`)
-      .join("; ");
-    setError(messages);
-  } else {
-    setError("Ошибка сохранения результата");
-  }
-}
+      const data = err.response?.data;
+      setResultError(Array.isArray(data) ? data.join(" ") : getErrorMessage(err));
+    }
   };
 
   const renderFieldInput = (field, value) => {
@@ -307,6 +300,13 @@ export default function Analyses() {
               </div>
               <form onSubmit={handleSaveResult}>
                 <div className="modal-body">
+                  {resultError && <div className="alert alert-error" role="alert">{resultError}</div>}
+                  {!resultFields.length && !resultOrder.analysis_type_fields?.length && (
+                    <div className="form-group">
+                      <label htmlFor="result-text">Результат</label>
+                      <textarea id="result-text" className="input" value={resultText} onChange={(e) => setResultText(e.target.value)} required />
+                    </div>
+                  )}
                   <p style={{ marginBottom: "16px", color: "var(--text-secondary)", fontSize: "14px" }}>
                     Пациент: <strong>{resultOrder.patient_name || resultOrder.patient?.full_name || `#${resultOrder.patient}`}</strong>
                   </p>

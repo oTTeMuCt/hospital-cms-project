@@ -16,12 +16,16 @@ import Reports from "./pages/Reports";
 import MyAnalyses from "./pages/MyAnalyses";
 import PatientProfile from "./pages/PatientProfile";
 import PasswordChange from "./pages/PasswordChange";
+import PasswordReset from "./pages/PasswordReset";
 
 export default function App() {
   return (
     <AuthProvider>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/password-reset" element={<PasswordReset />} />
+        <Route path="/reset-password" element={<PasswordReset confirm />} />
+        <Route path="/reset-password/:uid/:token" element={<PasswordReset confirm />} />
         <Route path="/register" element={<Register />} />
         <Route path="/" element={<MainLayout />}>
           <Route index element={<Dashboard />} />

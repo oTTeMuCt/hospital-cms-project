@@ -5,14 +5,14 @@ Provides secure token-based password reset flow and
 authenticated password change endpoint.
 """
 import logging
-from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.forms import PasswordResetForm
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.core.mail import send_mail
+from django.db import transaction
 from django.template.loader import render_to_string
-from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from rest_framework import serializers, status
@@ -29,11 +29,6 @@ token_generator = PasswordResetTokenGenerator()
 
 class PasswordResetRequestSerializer(serializers.Serializer):
     email = serializers.EmailField()
-
-    def validate_email(self, value):
-        if not User.objects.filter(email__iexact=value).exists():
-            raise serializers.ValidationError("Пользователь с таким email не найден.")
-        return value
 
 
 class PasswordResetConfirmSerializer(serializers.Serializer):
@@ -77,45 +72,29 @@ class PasswordResetRequestView(APIView):
         serializer.is_valid(raise_exception=True)
 
         email = serializer.validated_data["email"]
-        try:
-            user = User.objects.get(email__iexact=email)
-        except User.DoesNotExist:
-            # Don't reveal whether email exists
-            return Response(
-                {"detail": "Если email зарегистрирован, инструкции отправлены."},
-                status=status.HTTP_200_OK,
-            )
+        frontend_url = settings.FRONTEND_URL.rstrip("/")
+        valid_hours = settings.PASSWORD_RESET_TIMEOUT / 3600
 
-        # Generate token
-        uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
-        token = token_generator.make_token(user)
-
-        # Build reset link
-        frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:3000")
-        reset_link = f"{frontend_url}/reset-password/{uidb64}/{token}/"
-
-        # Send email
-        try:
-            subject = "Сброс пароля — Hospital CMS"
-            message = render_to_string("accounts/password_reset_email.html", {
-                "user": user,
-                "reset_link": reset_link,
-                "valid_hours": 24,
-            })
-            send_mail(
-                subject,
-                message,
-                settings.DEFAULT_FROM_EMAIL or "noreply@hospitalcms.com",
-                [email],
-                fail_silently=False,
-            )
-            logger.info("Password reset email sent to %s (user_id=%s)", email, user.pk)
-        except Exception as exc:
-            logger.error("Failed to send password reset email to %s: %s", email, exc)
-            return Response(
-                {"detail": "Ошибка отправки email. Попробуйте позже."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        for user in PasswordResetForm().get_users(email):
+            uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
+            token = token_generator.make_token(user)
+            reset_link = f"{frontend_url}/reset-password/#{uidb64}/{token}"
+            try:
+                message = render_to_string("accounts/password_reset_email.html", {
+                    "user": user,
+                    "reset_link": reset_link,
+                    "valid_hours": f"{valid_hours:g}",
+                })
+                send_mail(
+                    "Сброс пароля — Hospital CMS",
+                    f"Ссылка для сброса пароля: {reset_link}",
+                    settings.DEFAULT_FROM_EMAIL,
+                    [user.email],
+                    fail_silently=False,
+                    html_message=message,
+                )
+            except Exception as exc:
+                logger.error("Could not send password reset email (%s)", type(exc).__name__)
 
         return Response(
             {"detail": "Если email зарегистрирован, инструкции отправлены."},
@@ -131,6 +110,7 @@ class PasswordResetConfirmView(APIView):
     permission_classes = [AllowAny]
     serializer_class = PasswordResetConfirmSerializer
 
+    @transaction.atomic
     def post(self, request):
         serializer = PasswordResetConfirmSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -141,7 +121,7 @@ class PasswordResetConfirmView(APIView):
 
         try:
             uid = force_str(urlsafe_base64_decode(uidb64))
-            user = User.objects.get(pk=uid)
+            user = User.objects.select_for_update().get(pk=uid, is_active=True)
         except (TypeError, ValueError, OverflowError, User.DoesNotExist):
             return Response(
                 {"detail": "Недействительная ссылка для сброса пароля."},
