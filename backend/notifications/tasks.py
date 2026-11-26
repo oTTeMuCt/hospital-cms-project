@@ -4,23 +4,20 @@ import os
 from celery import shared_task
 from django.conf import settings
 from django.core.mail import send_mail
+from django.db import transaction
 from django.utils import timezone
+
+from .models import Notification, NotificationChannel, NotificationStatus
 
 logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
+@transaction.atomic
 def send_notification(self, notification_id: int) -> dict:
-    """
-    Отправляет уведомление по указанному каналу (telegram / email).
-    Вызывается автоматически после создания Notification.
-    """
-    from .models import Notification, NotificationStatus
-
+    """Deliver a queued notification and retry transient delivery errors."""
     try:
-        notification = Notification.objects.select_related(
-            "recipient_content_type"
-        ).get(pk=notification_id)
+        notification = Notification.objects.select_for_update().get(pk=notification_id)
     except Notification.DoesNotExist:
         logger.error("Notification pk=%s not found", notification_id)
         return {"status": "error", "detail": "Notification not found"}
@@ -30,30 +27,36 @@ def send_notification(self, notification_id: int) -> dict:
         return {"status": "skipped", "detail": notification.status}
 
     channel = notification.channel
-    try:
-        if channel == "telegram":
-            send_telegram(notification)
-        elif channel == "email":
-            send_email_notification(notification)
+    senders = {
+        NotificationChannel.EMAIL: send_email_notification,
+        NotificationChannel.TELEGRAM: send_telegram,
+    }
+    sender = senders.get(channel)
+    if sender is None:
+        error_message = "Notification channel is unsupported."
+    else:
+        try:
+            sender(notification)
+        except Exception as exc:
+            # Provider errors can contain credentials, recipient details or message text.
+            logger.warning(
+                "Notification %s failed on attempt %s (%s)",
+                notification_id, self.request.retries + 1, type(exc).__name__,
+            )
+            if self.request.retries < self.max_retries:
+                raise self.retry() from None
+            error_message = "Notification delivery failed after retries."
         else:
-            logger.warning("Unknown channel %s for notification pk=%s", channel, notification_id)
-            notification.status = NotificationStatus.FAILED
-            notification.error_message = f"Unknown channel: {channel}"
-            notification.save(update_fields=["status", "error_message"])
-            return {"status": "error", "detail": f"Unknown channel: {channel}"}
+            notification.status = NotificationStatus.SENT
+            notification.sent_at = timezone.now()
+            notification.error_message = ""
+            notification.save(update_fields=["status", "sent_at", "error_message"])
+            return {"status": "sent", "channel": channel}
 
-        notification.status = NotificationStatus.SENT
-        notification.sent_at = timezone.now()
-        notification.save(update_fields=["status", "sent_at"])
-        logger.info("Notification pk=%s sent via %s", notification_id, channel)
-        return {"status": "sent", "channel": channel}
-
-    except Exception as exc:
-        logger.exception("Failed to send notification pk=%s via %s", notification_id, channel)
-        notification.status = NotificationStatus.FAILED
-        notification.error_message = str(exc)[:500]
-        notification.save(update_fields=["status", "error_message"])
-        raise self.retry(exc=exc)
+    notification.status = NotificationStatus.FAILED
+    notification.error_message = error_message
+    notification.save(update_fields=["status", "error_message"])
+    return {"status": "error", "detail": error_message}
 
 
 def send_telegram(notification) -> None:

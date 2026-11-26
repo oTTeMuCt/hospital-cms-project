@@ -26,7 +26,7 @@ class NotificationSerializer(serializers.ModelSerializer):
             "error_message",
             "created_by",
         ]
-        read_only_fields = ["id", "created_at", "sent_at", "status"]
+        read_only_fields = ["id", "created_at", "sent_at", "status", "error_message"]
 
     def get_recipient_name(self, obj):
         if obj.recipient:

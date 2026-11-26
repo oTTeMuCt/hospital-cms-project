@@ -1,7 +1,9 @@
 import logging
 import os
+from collections.abc import Mapping
 
 from django.db.models import Q
+from django.utils.crypto import constant_time_compare
 from rest_framework import viewsets, status, filters
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -123,34 +125,34 @@ class BotPatientAnalysesView(APIView):
     permission_classes = []
 
     def get(self, request):
-        bot_key = request.headers.get("X-Bot-Key")
+        return self._lookup(request, request.query_params)
+
+    def post(self, request):
+        return self._lookup(request, request.data)
+
+    def _lookup(self, request, identifiers):
         expected_key = os.getenv("BOT_API_KEY")
         if not expected_key:
             logger.error("BOT_API_KEY not configured")
             return Response({"error": "Service configuration error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        # Log incoming request details for diagnostics
-        logger.info(
-            "Bot request received: passport=%s, pinfl=%s, X-Bot-Key=%s, remote=%s",
-            request.GET.get("passport", ""),
-            request.GET.get("pinfl", ""),
-            "***" if bot_key else "(none)",
-            request.META.get("REMOTE_ADDR", "unknown"),
-        )
-
-        if not bot_key or bot_key != expected_key:
-            logger.warning(
-                "Bot auth failed: provided_key=%s, expected_key=%s",
-                bot_key,
-                expected_key,
-            )
+        if not constant_time_compare(request.headers.get("X-Bot-Key", ""), expected_key):
+            logger.warning("Bot authentication failed")
             return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
 
-        passport = request.GET.get("passport", "").strip()
-        pinfl = request.GET.get("pinfl", "").strip()
+        if not isinstance(identifiers, Mapping):
+            return Response({"error": "Ожидается объект с идентификаторами"}, status=status.HTTP_400_BAD_REQUEST)
 
+        passport = identifiers.get("passport", "")
+        pinfl = identifiers.get("pinfl", "")
+        if not isinstance(passport, str) or not isinstance(pinfl, str):
+            return Response(
+                {"error": "Ожидаются строковые значения passport и pinfl"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        passport = passport.strip()
+        pinfl = pinfl.strip()
         if not passport and not pinfl:
-            logger.warning("Bot request missing passport and pinfl")
             return Response(
                 {"error": "Укажите passport или pinfl"},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -159,19 +161,12 @@ class BotPatientAnalysesView(APIView):
         try:
             if passport:
                 patient = Patient.objects.get(passport__iexact=passport)
-                logger.info("Patient found by passport: id=%s, name=%s", patient.id, patient.full_name)
             else:
                 patient = Patient.objects.get(pinfl__iexact=pinfl)
-                logger.info("Patient found by pinfl: id=%s, name=%s", patient.id, patient.full_name)
         except Patient.DoesNotExist:
-            logger.warning("Patient not found: passport=%s, pinfl=%s", passport, pinfl)
             return Response({"error": "Пациент не найден"}, status=status.HTTP_404_NOT_FOUND)
         except Patient.MultipleObjectsReturned:
-            logger.error(
-                "Multiple patients found: passport=%s, pinfl=%s. Data integrity issue!",
-                passport,
-                pinfl,
-            )
+            logger.error("Multiple patients match a Telegram lookup")
             return Response(
                 {"error": "Найдено несколько пациентов. Обратитесь в регистратуру."},
                 status=status.HTTP_409_CONFLICT,
@@ -182,13 +177,6 @@ class BotPatientAnalysesView(APIView):
         ).select_related("analysis_type").order_by("-requested_at")
 
         serializer = BotAnalysisResultSerializer(analyses, many=True)
-        analysis_count = len(serializer.data)
-        logger.info(
-            "Returning %d analyses for patient id=%s",
-            analysis_count,
-            patient.id,
-        )
-
         return Response({
             "patient": {
                 "id": patient.id,

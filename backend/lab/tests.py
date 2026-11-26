@@ -2,10 +2,12 @@
 Tests for the Doctor → Laboratory workflow.
 Verifies that Lab Technicians can see newly created (unassigned) analyses.
 """
+from unittest.mock import patch
+
 from django.test import TestCase, RequestFactory
 from django.contrib.auth import get_user_model
 from django.db.models import Q
-from rest_framework.test import APIRequestFactory, force_authenticate
+from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 
 from accounts.models import UserRole
 from accounts.permissions import IsDoctor, IsDoctorOrLabTech
@@ -489,3 +491,20 @@ class LabWorkflowTests(TestCase):
             "Patient must see their own analyses")
         self.assertNotIn(order2, qs,
             "Patient must NOT see other patients' analyses")
+
+
+class BotAnalysisLookupTests(TestCase):
+    @patch.dict("os.environ", {"BOT_API_KEY": "test-key"})
+    def test_post_lookup_preserves_legacy_response(self):
+        patient = Patient.objects.create(full_name="Test patient", passport="TEST00001")
+        client = APIClient()
+        headers = {"HTTP_X_BOT_KEY": "test-key"}
+        identifiers = {"passport": patient.passport}
+
+        with self.assertNoLogs("lab.bot", level="INFO"):
+            response = client.post("/api/bot/patient-analyses/", identifiers, format="json", **headers)
+            legacy = client.get("/api/bot/patient-analyses/", identifiers, **headers)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(legacy.json(), response.json())
+        self.assertEqual(response.json()["patient"]["id"], patient.pk)
