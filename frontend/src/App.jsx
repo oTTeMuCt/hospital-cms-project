@@ -17,6 +17,9 @@ import MyAnalyses from "./pages/MyAnalyses";
 import PatientProfile from "./pages/PatientProfile";
 import PasswordChange from "./pages/PasswordChange";
 import PasswordReset from "./pages/PasswordReset";
+import MedicalChart from "./pages/MedicalChart";
+import AnalysisCatalog from "./pages/AnalysisCatalog";
+import BookingCalendar from "./pages/BookingCalendar";
 
 export default function App() {
   return (
@@ -34,7 +37,10 @@ export default function App() {
           <Route path="staff" element={<Staff />} />
           <Route path="patients" element={<Patients />} />
           <Route path="patients/new" element={<PatientForm />} />
+          <Route path="patients/:id/medical-chart" element={<MedicalChart />} />
           <Route path="appointments" element={<Appointments />} />
+          <Route path="calendar" element={<BookingCalendar />} />
+          <Route path="analysis-catalog" element={<AnalysisCatalog />} />
           <Route path="analyses" element={<Analyses />} />
           <Route path="audit" element={<AuditLog />} />
           <Route path="reports" element={<Reports />} />

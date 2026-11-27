@@ -1,16 +1,13 @@
-from datetime import timedelta
-
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import DateTimeField, ExpressionWrapper, F
-from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import serializers
 
-from .models import Appointment, AppointmentStatus
+from .availability import DEFAULT_DURATION, occupied_bookings, work_interval
+from .models import Appointment, AppointmentStatus, DoctorWorkHours
 
 User = get_user_model()
-DEFAULT_DURATION = timedelta(minutes=30)
 STATUS_TRANSITIONS = {
     AppointmentStatus.PENDING: {AppointmentStatus.CONFIRMED, AppointmentStatus.CANCELLED},
     AppointmentStatus.CONFIRMED: {AppointmentStatus.COMPLETED, AppointmentStatus.CANCELLED, AppointmentStatus.NO_SHOW},
@@ -19,6 +16,10 @@ STATUS_TRANSITIONS = {
 
 
 class AppointmentSerializer(serializers.ModelSerializer):
+    doctor = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.filter(role__in=["doctor", "chief_doctor"], is_active=True),
+        allow_null=True, required=False,
+    )
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     patient_name = serializers.SerializerMethodField()
     doctor_name = serializers.SerializerMethodField()
@@ -62,12 +63,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
         # Lock the doctor before checking availability so concurrent API writes
         # for the same doctor cannot both reserve the interval in PostgreSQL.
         User.objects.select_for_update().get(pk=doctor.pk)
-        legacy_end = ExpressionWrapper(F("scheduled_at") + DEFAULT_DURATION, output_field=DateTimeField())
-        overlapping = Appointment.objects.alias(
-            effective_end=Coalesce("end_time", legacy_end),
-        ).filter(
-            doctor=doctor, scheduled_at__lt=end, effective_end__gt=start,
-        ).exclude(status=AppointmentStatus.CANCELLED)
+        overlapping = occupied_bookings(doctor, start, end)
         if instance:
             overlapping = overlapping.exclude(pk=instance.pk)
         conflict = overlapping.first()
@@ -78,6 +74,22 @@ class AppointmentSerializer(serializers.ModelSerializer):
                 f"{conflict.scheduled_at:%d.%m.%Y %H:%M} — {conflict_end:%H:%M}"
             )
 
+    def _check_workday(self, data, instance=None):
+        doctor = data.get("doctor", getattr(instance, "doctor", None))
+        if doctor is None or data.get("status", getattr(instance, "status", None)) == AppointmentStatus.CANCELLED:
+            return
+        days = DoctorWorkHours.objects.filter(doctor=doctor)
+        if not days.exists():
+            return
+        start = data.get("scheduled_at", getattr(instance, "scheduled_at", None))
+        day = timezone.localdate(start, timezone.get_default_timezone())
+        schedule = days.filter(weekday=day.weekday()).first()
+        if schedule:
+            opens, closes = work_interval(schedule, day)
+            if opens <= start < data["end_time"] <= closes:
+                return
+        raise serializers.ValidationError({"scheduled_at": "Время вне рабочего графика врача."})
+
     def _check_role(self, data, instance=None):
         user = getattr(self.context.get("request"), "user", None)
         role = getattr(user, "role", None)
@@ -87,6 +99,8 @@ class AppointmentSerializer(serializers.ModelSerializer):
             if instance is None:
                 if data["patient"].user_id != user.pk:
                     raise serializers.ValidationError({"patient": "Можно записать только себя."})
+                if not data.get("doctor") or data["scheduled_at"] < timezone.now():
+                    raise serializers.ValidationError({"scheduled_at": "Выберите врача и время в будущем."})
                 if "notes" in data:
                     raise serializers.ValidationError({"notes": "Служебное примечание заполняет сотрудник."})
             elif set(data) != {"status"} or data["status"] != AppointmentStatus.CANCELLED:
@@ -107,6 +121,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         self._check_role(validated_data)
         self._prepare_booking(validated_data)
+        self._check_workday(validated_data)
         return super().create(validated_data)
 
     @transaction.atomic
@@ -114,5 +129,26 @@ class AppointmentSerializer(serializers.ModelSerializer):
         current = get_object_or_404(Appointment.objects.select_for_update(), pk=instance.pk)
         self._check_role(validated_data, current)
         if {"doctor", "scheduled_at", "end_time", "status"}.intersection(validated_data):
+            changes_slot = {"doctor", "scheduled_at", "end_time"}.intersection(validated_data)
+            reopened = current.status == AppointmentStatus.CANCELLED and validated_data.get("status") == AppointmentStatus.PENDING
             self._prepare_booking(validated_data, current)
+            if changes_slot or reopened:
+                self._check_workday(validated_data, current)
         return super().update(current, validated_data)
+
+
+class DoctorWorkHoursSerializer(serializers.ModelSerializer):
+    doctor = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(
+        role__in=["doctor", "chief_doctor"], is_active=True,
+    ))
+
+    class Meta:
+        model = DoctorWorkHours
+        fields = ["id", "doctor", "weekday", "starts_at", "ends_at"]
+
+    def validate(self, attrs):
+        if attrs.get("starts_at", getattr(self.instance, "starts_at", None)) >= attrs.get(
+            "ends_at", getattr(self.instance, "ends_at", None),
+        ):
+            raise serializers.ValidationError({"ends_at": "Окончание должно быть после начала."})
+        return attrs

@@ -1,0 +1,5 @@
+{$HCMS_DOMAIN} {
+    reverse_proxy frontend:80 {
+        header_up X-Forwarded-Proto {scheme}
+    }
+}

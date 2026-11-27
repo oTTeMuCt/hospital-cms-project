@@ -65,3 +65,19 @@ class Appointment(models.Model):
 
     def __str__(self):
         return f"Приём: {self.patient.full_name} — {self.scheduled_at:%d.%m.%Y %H:%M}"
+
+
+class DoctorWorkHours(models.Model):
+    doctor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="work_hours")
+    weekday = models.PositiveSmallIntegerField(choices=enumerate(
+        ("Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье")
+    ))
+    starts_at = models.TimeField()
+    ends_at = models.TimeField()
+
+    class Meta:
+        ordering = ["doctor_id", "weekday"]
+        constraints = [
+            models.UniqueConstraint(fields=["doctor", "weekday"], name="unique_doctor_workday"),
+            models.CheckConstraint(condition=models.Q(starts_at__lt=models.F("ends_at")), name="valid_doctor_workday"),
+        ]

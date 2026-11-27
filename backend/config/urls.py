@@ -1,6 +1,8 @@
 from django.contrib import admin
 from django.urls import include, path
 from django.http import JsonResponse
+from django.core.cache import cache
+from django.db import connection
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
 
 
@@ -8,7 +10,18 @@ def healthcheck(request):
     return JsonResponse({"status": "ok", "service": "backend"})
 
 
+def readiness(request):
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+        cache.get("hospital-cms-readiness")
+    except Exception:
+        return JsonResponse({"status": "unavailable"}, status=503)
+    return JsonResponse({"status": "ready"})
+
+
 urlpatterns = [
+    path("ready/", readiness, name="readiness"),
     path("admin/", admin.site.urls),
     path("health/", healthcheck, name="healthcheck"),
     # Prometheus metrics

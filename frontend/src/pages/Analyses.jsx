@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import api, { getErrorMessage } from "../api";
+import { Link } from "react-router-dom";
+import api, { getAllPages, getErrorMessage } from "../api";
 import { useAuth } from "../context/AuthContext";
 
 const STATUS_META = {
@@ -41,11 +42,11 @@ export default function Analyses() {
   const fetchData = async () => {
     try {
       const [ordRes, typesRes, patRes] = await Promise.allSettled([
-        api.get("/analysis-orders/"), api.get("/analysis-types/"), api.get("/patients/"),
+        api.get("/analysis-orders/"), getAllPages("/analysis-types/"), getAllPages("/patients/"),
       ]);
       if (ordRes.status === "fulfilled") setOrders(ordRes.value.data.results || ordRes.value.data);
-      if (typesRes.status === "fulfilled") setAnalysisTypes(typesRes.value.data.results || typesRes.value.data);
-      if (patRes.status === "fulfilled") setPatients(patRes.value.data.results || patRes.value.data);
+      if (typesRes.status === "fulfilled") setAnalysisTypes(typesRes.value);
+      if (patRes.status === "fulfilled") setPatients(patRes.value);
     } catch {
       setError("Ошибка загрузки");
     } finally {
@@ -226,6 +227,7 @@ export default function Analyses() {
             <h1>Лаборатория</h1>
             <p>Управление анализами и результатами исследований</p>
           </div>
+          {["admin", "chief_doctor"].includes(role) && <Link className="btn btn-outline" to="/analysis-catalog">Виды анализов</Link>}
           {isDoctor && (
             <button className="btn btn-primary" onClick={() => setShowModal(true)}>+ Назначить анализ</button>
           )}

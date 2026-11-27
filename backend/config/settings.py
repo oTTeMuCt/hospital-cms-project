@@ -224,7 +224,10 @@ if not CORS_ALLOWED_ORIGINS and not CORS_ALLOW_ALL_ORIGINS:
 # ---------------------------------------------------------------------------
 # HTTPS / Security Headers
 # ---------------------------------------------------------------------------
-SECURE_REDIRECT_EXEMPT = [r"^health/$"]
+if os.getenv("TRUST_PROXY_SSL_HEADER", "").lower() in {"1", "true", "yes", "on"}:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+SECURE_REDIRECT_EXEMPT = [r"^health/$", r"^ready/$", r"^metrics$"]
 SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "").lower() in {"1", "true", "yes", "on"}
 
 # HSTS: only apply when HTTPS is enabled
@@ -299,6 +302,7 @@ EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() in {"1", "true", "yes", "on"}
+EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@hospitalcms.com")
 
 # ---------------------------------------------------------------------------

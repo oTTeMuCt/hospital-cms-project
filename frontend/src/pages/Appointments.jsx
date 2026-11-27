@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import { useState, useEffect } from "react";
 import api, { getErrorMessage } from "../api";
 
@@ -10,6 +12,7 @@ const STATUS_LABELS = {
 };
 
 export default function Appointments() {
+  const { role, user } = useAuth();
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -47,7 +50,7 @@ export default function Appointments() {
     setSaving(true);
     setBookingError(null);
     try {
-      await api.post("/appointments/", form);
+      await api.post("/appointments/", { ...form, doctor: role === "doctor" ? user.id : form.doctor });
       setShowModal(false);
       setForm({ patient: "", doctor: "", department: "", scheduled_at: "", reason: "" });
       fetchData();
@@ -110,6 +113,8 @@ export default function Appointments() {
                       <td className="text-sm text-muted truncate" style={{ maxWidth: "200px" }}>{a.reason || "—"}</td>
                       <td>
                         <div style={{ display: "flex", gap: "6px" }}>
+                          {["doctor", "chief_doctor", "admin"].includes(role) && <Link className="btn btn-outline btn-sm" to={`/patients/${a.patient}/medical-chart`}>Медкарта</Link>}
+                          {["registrar", "chief_doctor", "admin"].includes(role) && ["pending", "confirmed"].includes(a.status) && <Link className="btn btn-outline btn-sm" to={`/calendar?move=${a.id}`}>Перенести</Link>}
                           {a.status === "pending" && <button className="btn btn-success btn-sm" onClick={() => updateStatus(a.id, "confirmed")}>✅</button>}
                           {a.status === "confirmed" && <button className="btn btn-info btn-sm" onClick={() => updateStatus(a.id, "completed")}>✔️</button>}
                           {(a.status === "pending" || a.status === "confirmed") && <button className="btn btn-danger btn-sm" onClick={() => updateStatus(a.id, "cancelled")}>❌</button>}
@@ -130,7 +135,7 @@ export default function Appointments() {
                 <div className="modal-body">
                   {bookingError && <div className="alert alert-error" role="alert">{bookingError}</div>}
                   <div className="form-group"><label>Пациент *</label><select className="input" value={form.patient} onChange={(e) => setForm({ ...form, patient: e.target.value })} required><option value="">Выберите пациента</option>{patients.map((p) => <option key={p.id} value={p.id}>{p.full_name}</option>)}</select></div>
-                  <div className="form-group"><label>Врач</label><select className="input" value={form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })}><option value="">Выберите врача</option>{doctors.map((d) => <option key={d.id} value={d.id}>{d.last_name} {d.first_name} ({d.username})</option>)}</select></div>
+                  <div className="form-group"><label>Врач</label><select disabled={role === "doctor"} className="input" value={role === "doctor" ? user.id : form.doctor} onChange={(e) => setForm({ ...form, doctor: e.target.value })}><option value="">Выберите врача</option>{doctors.map((d) => <option key={d.id} value={d.id}>{d.last_name} {d.first_name} ({d.username})</option>)}</select></div>
                   <div className="form-group"><label>Отделение</label><select className="input" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })}><option value="">Выберите отделение</option>{departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</select></div>
                   <div className="form-group"><label>Дата и время *</label><input className="input" type="datetime-local" value={form.scheduled_at} onChange={(e) => setForm({ ...form, scheduled_at: e.target.value })} required /></div>
                   <div className="form-group"><label>Причина обращения</label><textarea className="input" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} /></div>

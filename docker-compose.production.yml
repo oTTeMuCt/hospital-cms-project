@@ -1,0 +1,69 @@
+# Use with docker-compose.yml. Requires Docker Compose 2.24.4 or later.
+services:
+  db:
+    ports: !reset []
+    environment:
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the production environment}"
+  redis:
+    ports: !reset []
+  backend:
+    ports: !reset []
+    environment:
+      DJANGO_DEBUG: "False"
+      DJANGO_SECRET_KEY: "${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in the production environment}"
+      DJANGO_ALLOWED_HOSTS: "${HCMS_DOMAIN:?Set HCMS_DOMAIN},backend,localhost,127.0.0.1"
+      FRONTEND_URL: "https://${HCMS_DOMAIN}"
+      CSRF_TRUSTED_ORIGINS: "https://${HCMS_DOMAIN}"
+      CORS_ALLOWED_ORIGINS: "https://${HCMS_DOMAIN}"
+      CORS_ALLOW_ALL_ORIGINS: "False"
+      TRUST_PROXY_SSL_HEADER: "True"
+      SECURE_SSL_REDIRECT: "True"
+      SESSION_COOKIE_SECURE: "True"
+      CSRF_COOKIE_SECURE: "True"
+      HSTS_SECONDS: "86400"
+      EMAIL_BACKEND: django.core.mail.backends.smtp.EmailBackend
+  celery_worker:
+    environment:
+      DJANGO_DEBUG: "False"
+      DJANGO_SECRET_KEY: "${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in the production environment}"
+      EMAIL_BACKEND: django.core.mail.backends.smtp.EmailBackend
+  frontend:
+    ports: !reset []
+  prometheus:
+    image: hospital-cms-prometheus
+    build:
+      context: ./monitoring
+      dockerfile: Dockerfile.prometheus
+    ports: !reset []
+    volumes: !override
+      - prometheus_data:/prometheus
+  grafana:
+    image: hospital-cms-grafana
+    build:
+      context: ./monitoring
+      dockerfile: Dockerfile.grafana
+    volumes: !override
+      - grafana_data:/var/lib/grafana
+    ports: !override
+      - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in the production environment}"
+  gateway:
+    image: caddy:2-alpine
+    environment:
+      HCMS_DOMAIN: "${HCMS_DOMAIN:?Set HCMS_DOMAIN}"
+      NO_PROXY: "frontend,localhost,127.0.0.1"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./ops/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -10,6 +10,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from accounts.permissions import (
     IsAdminRole,
+    IsChiefDoctor,
     IsAuthenticatedAndRole,
     IsDoctor,
     IsDoctorOrLabTech,
@@ -19,7 +20,9 @@ from rest_framework import permissions as drf_permissions
 from notifications.subscription_models import Subscription
 from patients.telegram import is_bot_request
 from .models import AnalysisOrder, AnalysisStatus, AnalysisType, PUBLISHED_STATUSES
-from .serializers import AnalysisOrderSerializer, AnalysisTypeDetailSerializer, AnalysisTypeSerializer
+from .serializers import (
+    AnalysisOrderSerializer, AnalysisTypeCreateSerializer, AnalysisTypeDetailSerializer, AnalysisTypeSerializer,
+)
 from .bot_serializers import BotAnalysisResultSerializer
 
 logger = logging.getLogger("lab.bot")
@@ -33,10 +36,19 @@ class AnalysisTypeViewSet(viewsets.ModelViewSet):
     queryset = AnalysisType.objects.all()
     serializer_class = AnalysisTypeSerializer
 
+    def get_serializer_class(self):
+        if self.action == "create":
+            return AnalysisTypeCreateSerializer
+        if self.action == "retrieve":
+            return AnalysisTypeDetailSerializer
+        return super().get_serializer_class()
+
     def get_permissions(self):
         if self.action in ("list", "retrieve"):
             return [IsAuthenticated()]
-        return [IsAdminRole()]
+        if self.action == "destroy":
+            return [IsAdminRole()]
+        return [IsChiefDoctor()]
 
 
 class AnalysisOrderViewSet(viewsets.ModelViewSet):
@@ -48,7 +60,7 @@ class AnalysisOrderViewSet(viewsets.ModelViewSet):
     serializer_class = AnalysisOrderSerializer
     allowed_roles = {"admin", "doctor", "chief_doctor", "lab_tech", "registrar", "patient"}
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ["patient", "status", "analysis_type"]
+    filterset_fields = {"patient": ["exact"], "status": ["exact"], "analysis_type": ["exact"], "requested_at": ["date__gte", "date__lte"]}
     search_fields = ["patient__full_name", "analysis_type__name", "result"]
     ordering_fields = ["requested_at", "status"]
     ordering = ["-requested_at"]
