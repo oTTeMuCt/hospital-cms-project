@@ -3,6 +3,7 @@ from pathlib import PurePosixPath
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import Q
 from django.http import FileResponse, Http404
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
@@ -24,6 +25,8 @@ from .serializers import FileSerializer
 class FileViewSet(viewsets.ModelViewSet):
     queryset = File.objects.select_related("content_type", "uploaded_by")
     serializer_class = FileSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ["content_type", "object_id"]
 
     def get_permissions(self):
         return [IsAdminRole()] if self.action == "destroy" else [IsAuthenticated()]
@@ -64,6 +67,8 @@ class FileViewSet(viewsets.ModelViewSet):
         if self.request.user.role == UserRole.ADMIN:
             return
         targets = self._accessible_targets().get(content_type.pk)
+        if content_type.model_class() is MedicalRecordViewSet.queryset.model and self.request.user.role == UserRole.DOCTOR:
+            targets = targets.filter(created_by=self.request.user) if targets is not None else None
         if targets is None or not targets.filter(pk=object_id).exists():
             raise PermissionDenied("Нет доступа к объекту вложения.")
 

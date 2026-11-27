@@ -106,3 +106,18 @@ export function getErrorMessage(error) {
 
 export default api;
 
+
+export async function getAllPages(path, params = {}) {
+  const rows = [];
+  let nextPath = path;
+  let query = params;
+  while (nextPath) {
+    const { data } = await api.get(nextPath, { params: query });
+    rows.push(...(data.results || data));
+    if (!data.next) break;
+    const next = new URL(data.next, window.location.origin);
+    nextPath = next.pathname.replace(/^\/api(?=\/)/, "") + next.search;
+    query = {};
+  }
+  return rows;
+}

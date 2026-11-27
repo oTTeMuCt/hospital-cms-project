@@ -1,8 +1,10 @@
+import { useAuth } from "../context/AuthContext";
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import api from "../api";
 
 export default function Patients() {
+  const { role } = useAuth();
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -139,6 +141,7 @@ export default function Patients() {
                     <td>
                       <div style={{ display: "flex", gap: "6px" }}>
                         <button className="btn btn-outline btn-sm" onClick={() => setSelectedPatient(p)}>👁️</button>
+                        {["doctor", "chief_doctor", "admin"].includes(role) && <Link className="btn btn-outline btn-sm" to={`/patients/${p.id}/medical-chart`}>Медкарта</Link>}
                         <button className="btn btn-outline btn-sm" onClick={() => openEdit(p)}>✏️</button>
                         <button className="btn btn-danger btn-sm" onClick={() => handleDelete(p.id)}>🗑️</button>
                       </div>

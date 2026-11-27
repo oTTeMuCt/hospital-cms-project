@@ -1,6 +1,6 @@
-from django.db.models import Count, Q
+from django.db.models import Count
 from django.db.models.functions import TruncDate
-from rest_framework import permissions
+from rest_framework import serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -8,7 +8,27 @@ from accounts.permissions import IsChiefDoctor
 from patients.models import Patient
 from lab.models import AnalysisOrder, AnalysisType
 from appointments.models import Appointment
-from hospitals.models import Hospital
+from hospitals.models import Department, Hospital
+
+
+class ReportPeriodSerializer(serializers.Serializer):
+    start = serializers.DateField(required=False)
+    end = serializers.DateField(required=False)
+
+    def validate(self, data):
+        if data.get("start") and data.get("end") and data["start"] > data["end"]:
+            raise serializers.ValidationError({"end": "Конец периода раньше начала."})
+        return data
+
+
+def in_period(queryset, request, field):
+    serializer = ReportPeriodSerializer(data=request.query_params)
+    serializer.is_valid(raise_exception=True)
+    boundaries = (
+        (f"{field}__date__gte", serializer.validated_data.get("start")),
+        (f"{field}__date__lte", serializer.validated_data.get("end")),
+    )
+    return queryset.filter(**{key: value for key, value in boundaries if value is not None})
 
 
 class PatientStatsView(APIView):
@@ -39,14 +59,15 @@ class AnalysisStatsView(APIView):
     permission_classes = [IsChiefDoctor]
 
     def get(self, request):
-        total = AnalysisOrder.objects.count()
+        orders = in_period(AnalysisOrder.objects.all(), request, "requested_at")
+        total = orders.count()
         by_status = (
-            AnalysisOrder.objects.values("status")
+            orders.values("status")
             .annotate(count=Count("id"))
             .order_by("status")
         )
         by_type = (
-            AnalysisOrder.objects.values("analysis_type__name")
+            orders.values("analysis_type__name")
             .annotate(count=Count("id"))
             .order_by("-count")
         )
@@ -68,7 +89,7 @@ class DoctorStatsView(APIView):
 
     def get(self, request):
         doctor_counts = (
-            Appointment.objects.values(
+            in_period(Appointment.objects.all(), request, "scheduled_at").values(
                 "doctor_id",
                 "doctor__last_name",
                 "doctor__first_name",
@@ -86,11 +107,11 @@ class HospitalStatsView(APIView):
 
     def get(self, request):
         total_hospitals = Hospital.objects.count()
-        total_departments = 0  # будет просуммировано ниже
+        total_departments = Department.objects.count()
         hospitals = []
         for hospital in Hospital.objects.annotate(
-            dept_count=Count("departments"),
-            staff_count=Count("staff"),
+            dept_count=Count("departments", distinct=True),
+            staff_count=Count("staff", distinct=True),
         ):
             hospitals.append({
                 "id": hospital.id,
@@ -99,7 +120,6 @@ class HospitalStatsView(APIView):
                 "department_count": hospital.dept_count,
                 "staff_count": hospital.staff_count,
             })
-            total_departments += hospital.dept_count
         return Response({
             "total_hospitals": total_hospitals,
             "total_departments": total_departments,
@@ -113,7 +133,7 @@ class DailyStatsView(APIView):
 
     def get(self, request):
         daily = (
-            Appointment.objects.annotate(date=TruncDate("scheduled_at"))
+            in_period(Appointment.objects.all(), request, "scheduled_at").annotate(date=TruncDate("scheduled_at"))
             .values("date")
             .annotate(count=Count("id"))
             .order_by("-date")

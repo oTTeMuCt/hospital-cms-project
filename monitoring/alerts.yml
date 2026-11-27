@@ -1,0 +1,10 @@
+groups:
+  - name: hospital-cms
+    rules:
+      - alert: HospitalCMSBackendUnavailable
+        expr: up{job="django"} == 0 or absent(up{job="django"})
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus cannot scrape the Hospital CMS backend"

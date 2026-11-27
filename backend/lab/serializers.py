@@ -78,6 +78,46 @@ class AnalysisTypeDetailSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
+class AnalysisFieldInputSerializer(AnalysisFieldSerializer):
+    class Meta(AnalysisFieldSerializer.Meta):
+        fields = tuple(field for field in AnalysisFieldSerializer.Meta.fields if field != "analysis_type")
+        validators = []
+
+    def validate(self, data):
+        options = data.get("options")
+        if data["field_type"] == AnalysisField.FieldType.CHOICE and (
+            not isinstance(options, list) or not options
+            or any(not isinstance(option, str) or not option.strip() for option in options)
+        ):
+            raise serializers.ValidationError({"options": "Введите варианты выбора."})
+        lower, upper = data.get("reference_range_min"), data.get("reference_range_max")
+        if lower is not None and upper is not None and lower > upper:
+            raise serializers.ValidationError("Минимальная граница выше максимальной.")
+        return data
+
+
+class AnalysisTypeCreateSerializer(AnalysisTypeSerializer):
+    fields = AnalysisFieldInputSerializer(many=True, required=False)
+
+    class Meta(AnalysisTypeSerializer.Meta):
+        fields = (*AnalysisTypeSerializer.Meta.fields, "fields")
+
+    def validate_fields(self, fields):
+        keys = [field["field_key"] for field in fields]
+        if len(keys) != len(set(keys)):
+            raise serializers.ValidationError("Ключи показателей должны быть уникальными.")
+        return fields
+
+    @transaction.atomic
+    def create(self, validated_data):
+        fields = validated_data.pop("fields", [])
+        kind = super().create(validated_data)
+        AnalysisField.objects.bulk_create([
+            AnalysisField(analysis_type=kind, **field) for field in fields
+        ])
+        return kind
+
+
 class AnalysisResultValueSerializer(serializers.ModelSerializer):
     """Serializer for AnalysisResultValue - used for READ (output) only.
 
@@ -114,6 +154,7 @@ class AnalysisResultValueSerializer(serializers.ModelSerializer):
 
 
 class AnalysisOrderSerializer(serializers.ModelSerializer):
+    patient_name = serializers.CharField(source="patient.full_name", read_only=True)
     analysis_type_name = serializers.CharField(source="analysis_type.name", read_only=True)
     analysis_type_fields = AnalysisFieldSerializer(source="analysis_type.fields", many=True, read_only=True)
     result_values = AnalysisResultValueSerializer(many=True, read_only=True)
@@ -123,6 +164,7 @@ class AnalysisOrderSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "patient",
+            "patient_name",
             "orderer",
             "assigned_to",
             "analysis_type",

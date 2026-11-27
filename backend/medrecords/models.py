@@ -11,6 +11,10 @@ class MedicalRecord(models.Model):
         on_delete=models.CASCADE,
         related_name="medical_records",
     )
+    appointment = models.ForeignKey(
+        "appointments.Appointment", on_delete=models.SET_NULL,
+        related_name="medical_records", null=True, blank=True,
+    )
     diagnoses = models.JSONField(
         "Диагнозы",
         default=list,

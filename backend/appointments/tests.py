@@ -73,7 +73,7 @@ class PatientAppointmentPolicyTests(TestCase):
         client = APIClient()
         client.force_authenticate(patient_user)
         booking = client.post("/api/appointments/", {
-            "patient": patient_user.patient_profile.pk, "doctor": physician.pk, "scheduled_at": now().isoformat(),
+            "patient": patient_user.patient_profile.pk, "doctor": physician.pk, "scheduled_at": (now() + timedelta(days=1)).isoformat(),
         }, format="json")
         self.assertEqual(booking.status_code, 201)
         self.assertEqual(booking.data["created_by"], patient_user.pk)
